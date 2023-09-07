@@ -5,6 +5,7 @@ go_library(
     srcs = ["main.go"],
     importpath = "tdiscuss/cmd/tdiscuss",
     visibility = ["//visibility:private"],
+    deps = ["@com_tailscale//tsnet"],
 )
 
 go_binary(

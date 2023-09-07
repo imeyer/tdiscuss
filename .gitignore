@@ -20,4 +20,8 @@
 # Go workspace file
 go.work
 
+# Bazel convenience symlinks
 bazel-*
+
+# The tdiscuss binary
+tdiscuss
