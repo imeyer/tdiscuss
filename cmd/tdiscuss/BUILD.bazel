@@ -3,9 +3,18 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "tdiscuss_lib",
     srcs = ["main.go"],
+    embedsrcs = [
+        "tmpl/index.html",
+        "tmpl/whoami.html",
+    ],
     importpath = "tdiscuss/cmd/tdiscuss",
     visibility = ["//visibility:private"],
-    deps = ["@com_tailscale//tsnet"],
+    deps = [
+        "//pkg/discuss",
+        "@com_tailscale//client/tailscale",
+        "@com_tailscale//hostinfo",
+        "@com_tailscale//tsnet",
+    ],
 )
 
 go_binary(

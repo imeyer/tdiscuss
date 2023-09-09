@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "discuss",
+    srcs = ["server.go"],
+    importpath = "tdiscuss/pkg/discuss",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_tailscale//client/tailscale",
+        "@com_tailscale//tailcfg",
+    ],
+)
