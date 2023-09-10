@@ -24,34 +24,14 @@ import (
 var templateFiles embed.FS
 
 var (
-	hostname        = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet (use TSNET_HOSTNAME in the environment)")
-	dataDir         = flag.String("data-location", dataLocation(), "Configuration data location. (defaults to DATA_DIR or ~/.config/tailscale/discuss)")
+	hostname        = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
+	dataDir         = flag.String("data-location", dataLocation(), "Configuration data location.")
 	debug           = flag.Bool("debug", false, "Enable debug logging")
 	tsnetLogVerbose = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
 )
 
-func dataLocation() string {
-	if dir, ok := os.LookupEnv("DATA_DIR"); ok {
-		return dir
-	}
-	dir, err := os.UserConfigDir()
-	if err != nil {
-		return os.Getenv("DATA_DIR")
-	}
-	return filepath.Join(dir, "tailscale", "discuss")
-}
-
-func envOr(key, defaultVal string) string {
-	if result, ok := os.LookupEnv(key); ok {
-		return result
-	}
-	return defaultVal
-}
-
 func main() {
 	flag.Parse()
-
-	createConfigDir(*dataDir)
 
 	hostinfo.SetApp("tdiscuss")
 
@@ -62,6 +42,11 @@ func main() {
 	}
 
 	logger := newLogger(&lvl)
+
+	err := createConfigDir(*dataDir)
+	if err != nil {
+		logger.Info(fmt.Sprintf("creating configuration directory (%s) failed: %v", *dataDir, err), "data-dir", *dataDir)
+	}
 
 	s := &tsnet.Server{
 		Dir:      filepath.Join(*dataDir, "tsnet"),
@@ -132,16 +117,18 @@ func main() {
 	log.Fatal(http.Serve(tln, tailnetMux))
 }
 
-func createConfigDir(dir string) {
+func createConfigDir(dir string) error {
 	err := os.MkdirAll(dir, 0700)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	err = os.MkdirAll(filepath.Join(dir, "tsnet"), 0700)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+
+	return nil
 }
 
 func checkTailscaleReady(lc *tailscale.LocalClient) error {
@@ -179,4 +166,22 @@ func newLogger(logLevel *slog.Level) *slog.Logger {
 	slog.SetDefault(logger)
 
 	return logger
+}
+
+func dataLocation() string {
+	if dir, ok := os.LookupEnv("DATA_DIR"); ok {
+		return dir
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return os.Getenv("DATA_DIR")
+	}
+	return filepath.Join(dir, "tailscale", "discuss")
+}
+
+func envOr(key, defaultVal string) string {
+	if result, ok := os.LookupEnv(key); ok {
+		return result
+	}
+	return defaultVal
 }
