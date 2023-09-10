@@ -24,4 +24,4 @@ go.work
 bazel-*
 
 # The tdiscuss binary
-tdiscuss
+/tdiscuss
