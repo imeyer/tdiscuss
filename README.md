@@ -3,7 +3,11 @@ Discussion board for your tailnet
 
 ## Why?
 
+<<<<<<< HEAD
 Why not? Who doesn't want a discussion board for their tailnet? Honestly, I've often found myself wanting a small/simple/easy-to-deploy discussion board [a la pgBoard](https://github.com/pgBoard/pgBoard). Tailscale launching golink and tclip, which both use the tailscale go library to expose the application securely, with user auth built-in!.
+=======
+Why not? Who doesn't want a discussion board for their tailnet? Honestly, I've often found myself wanting a small/simple/easy-to-deploy discussion board [a la pgBoard](https://github.com/pgBoard/pgBoard). The apps [golink](https://github.com/tailscale/golink) and [tclip](https://github.com/tailscale-dev/tclip) use the tailscale go library to expose the application securely on your tailnet. I thought this was a good fit for what I'm calling `tdiscuss`. That's why.
+>>>>>>> 026e8c9 (Update README.md)
 
 ## Running
 
