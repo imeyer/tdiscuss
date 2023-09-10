@@ -24,7 +24,7 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "TEMPLATE/index.html")
+	s.logger.DebugContext(r.Context(), "TEMPLATE/index.html")
 	if err := s.tmpls.ExecuteTemplate(w, "index.html", map[string]any{}); err != nil {
 		return
 	}
@@ -41,7 +41,7 @@ func (s *DiscussService) WhoAmI(w http.ResponseWriter, r *http.Request) {
 		s.logger.ErrorContext(r.Context(), err.Error())
 	}
 
-	s.logger.InfoContext(r.Context(), "TEMPLATE/whoami.html")
+	s.logger.DebugContext(r.Context(), "TEMPLATE/whoami.html")
 	err = s.tmpls.ExecuteTemplate(w, "whoami.html", struct {
 		UserInfo *tailcfg.UserProfile
 	}{
