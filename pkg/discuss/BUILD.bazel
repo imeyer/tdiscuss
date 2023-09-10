@@ -1,12 +1,29 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "discuss",
-    srcs = ["server.go"],
+    srcs = [
+        "db.go",
+        "server.go",
+        "types.go",
+    ],
+    embedsrcs = ["schema.sql"],
     importpath = "tdiscuss/pkg/discuss",
     visibility = ["//visibility:public"],
     deps = [
         "@com_tailscale//client/tailscale",
         "@com_tailscale//tailcfg",
+        "@org_modernc_sqlite//:sqlite",
     ],
+)
+
+go_test(
+    name = "discuss_test",
+    srcs = [
+        "db_test.go",
+        "server_test.go",
+    ],
+    embed = [":discuss"],
+    deps = ["@com_github_stretchr_testify//assert"],
+    size = "small",
 )
