@@ -12,14 +12,12 @@ import (
 
 func TestLoadTopics(t *testing.T) {
 	db, err := NewSQLiteDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 
 	// stable timestamps
-	ct1 := time.Now()
+	ct1 := time.Now().UTC().Unix()
 	time.Sleep(2 * time.Second)
-	ct2 := time.Now()
+	ct2 := time.Now().UTC().Unix()
 
 	ctx := context.Background()
 
@@ -28,51 +26,44 @@ func TestLoadTopics(t *testing.T) {
 			User:      "test@example.com",
 			Topic:     "topic1",
 			Body:      "body1",
-			CreatedAt: ct1,
+			CreatedAt: time.Unix(ct1, 0),
 		},
 		{
 			User:      "test2@example.com",
 			Topic:     "topic2",
 			Body:      "body2",
-			CreatedAt: ct2,
+			CreatedAt: time.Unix(ct2, 0),
 		},
 	}
 
 	for _, topic := range topics {
-		if err := db.SaveTopic(ctx, topic); err != nil {
-			t.Fatal(err)
-		}
+		err := db.SaveTopic(ctx, topic)
+		assert.Nil(t, err)
 	}
 
 	got, err := db.LoadTopics(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 
-	assert.Equal(t, topics[1].Topic, got[1].Topic, "topic1: Topics do not match")
+	assert.Equal(t, topics[1].Topic, got[1].Topic, "topic2: Topics do not match")
+	assert.Equal(t, topics[1].CreatedAt.UTC(), got[1].CreatedAt, "topic2: Timestamps do not match")
+	assert.Equal(t, topics[0].CreatedAt.UTC(), got[0].CreatedAt, "topic1: Timestamps do not match")
 }
 
 func TestSaveTopics(t *testing.T) {
 	db, err := NewSQLiteDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 
 	topic := &Topic{1, "test@test.com", "Topic1", "Body1", time.Now()}
 
 	ctx := context.Background()
 
 	err = db.SaveTopic(ctx, topic)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 }
 
 func TestSQLiteDB_Ping(t *testing.T) {
 	db, err := NewSQLiteDB(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
+	assert.Nil(t, err)
 
 	type fields struct {
 		db *sql.DB
