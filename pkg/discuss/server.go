@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"tailscale.com/client/tailscale"
-	"tailscale.com/tailcfg"
 )
 
 type DiscussService struct {
@@ -36,20 +35,29 @@ func (s *DiscussService) WhoAmI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userInfo, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	user, err := s.getUser(s.tailClient, r)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
+		return
 	}
 
 	s.logger.DebugContext(r.Context(), "TEMPLATE/whoami.html")
 	err = s.tmpls.ExecuteTemplate(w, "whoami.html", struct {
-		UserInfo *tailcfg.UserProfile
+		User string
 	}{
-		UserInfo: userInfo.UserProfile,
+		User: user,
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
 	}
+}
+
+func (s *DiscussService) getUser(lc *tailscale.LocalClient, r *http.Request) (string, error) {
+	whois, err := lc.WhoIs(r.Context(), r.RemoteAddr)
+	if err != nil {
+		return "anonymouse user", nil
+	}
+
+	return whois.UserProfile.LoginName, nil
 }
 
 func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *sql.DB, tmpls *template.Template, httpsURL string) *DiscussService {

@@ -12,18 +12,30 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_tailscale//client/tailscale",
-        "@com_tailscale//tailcfg",
         "@org_modernc_sqlite//:sqlite",
     ],
 )
 
 go_test(
     name = "discuss_test",
+    size = "small",
     srcs = [
         "db_test.go",
         "server_test.go",
     ],
     embed = [":discuss"],
-    deps = ["@com_github_stretchr_testify//assert"],
-    size = "small",
+    embedsrcs = [
+        "tmpl/index.html",
+        "tmpl/whoami.html",
+    ],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//net/netns",
+        "@com_tailscale//tailcfg",
+        "@com_tailscale//tsnet",
+        "@com_tailscale//tstest/integration",
+        "@com_tailscale//tstest/integration/testcontrol",
+        "@com_tailscale//types/logger",
+    ],
 )
