@@ -1,4 +1,4 @@
-module tdiscuss
+module github.com/imeyer/tdiscuss
 
 go 1.21.1
 

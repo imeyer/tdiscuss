@@ -12,8 +12,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"tdiscuss/pkg/discuss"
 	"time"
+
+	"github.com/imeyer/tdiscuss/pkg/discuss"
 
 	"tailscale.com/client/tailscale"
 	"tailscale.com/hostinfo"

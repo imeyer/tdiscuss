@@ -1,3 +1,4 @@
+# gazelle:prefix github.com/imeyer/tdiscuss
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
@@ -8,7 +9,7 @@ go_library(
         "types.go",
     ],
     embedsrcs = ["schema.sql"],
-    importpath = "tdiscuss/pkg/discuss",
+    importpath = "github.com/imeyer/tdiscuss/pkg/discuss",
     visibility = ["//visibility:public"],
     deps = [
         "@com_tailscale//client/tailscale",
@@ -24,6 +25,47 @@ go_test(
         "server_test.go",
     ],
     embed = [":discuss"],
+    embedsrcs = [
+        "testdata/whoami.html",
+        "testdata/index.html",
+    ],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_tailscale//tsnet",
+        "@com_tailscale//tstest/integration",
+        "@com_tailscale//tstest/integration/testcontrol",
+        "@com_tailscale//types/logger",
+    ],
+)
+
+go_library(
+    name = "tdiscuss",
+    srcs = [
+        "db.go",
+        "server.go",
+        "types.go",
+    ],
+    embedsrcs = ["schema.sql"],
+    importpath = "github.com/imeyer/tdiscuss",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_tailscale//client/tailscale",
+        "@org_modernc_sqlite//:sqlite",
+    ],
+)
+
+go_test(
+    name = "tdiscuss_test",
+    srcs = [
+        "db_test.go",
+        "server_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":tdiscuss"],
+    embedsrcs = [
+        "testdata/index.html",
+        "testdata/whoami.html",
+    ],
     deps = [
         "@com_github_stretchr_testify//assert",
         "@com_tailscale//tsnet",

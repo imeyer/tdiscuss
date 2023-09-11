@@ -1,15 +1,13 @@
 package discuss
 
 import (
+	"embed"
 	"html/template"
 	"io"
-	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,26 +17,8 @@ import (
 	"tailscale.com/types/logger"
 )
 
-// Get the templates from the cmd/tdiscuss/tmpl directory
-func parseTemplates() *template.Template {
-	templ := template.New("")
-	err := filepath.Walk("../../cmd/tdiscuss/tmpl", func(path string, info os.FileInfo, err error) error {
-		if strings.Contains(path, ".html") {
-			_, err = templ.ParseFiles(path)
-			if err != nil {
-				log.Println(err)
-			}
-		}
-
-		return err
-	})
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return templ
-}
+//go:embed testdata/*.html
+var templateDir embed.FS
 
 func TestDiscussService_WhoAmI(t *testing.T) {
 	var err error
@@ -57,7 +37,7 @@ func TestDiscussService_WhoAmI(t *testing.T) {
 			name:        "/whoami found",
 			path:        "/whoami",
 			currentUser: "test2@example.com",
-			wantBody:    []byte("<!DOCTYPE html>\n<html>\n\n<head>\n    <title>tdiscuss - A Discussion Board for your Tailnet</title>\n</head>\n\n<body>\n    <p>Hello anonymouse user</p>\n</body>\n\n</html>\n"),
+			wantBody:    []byte("anonymouse user\n"),
 			wantStatus:  http.StatusOK,
 		},
 		{
@@ -69,7 +49,7 @@ func TestDiscussService_WhoAmI(t *testing.T) {
 		},
 	}
 
-	tmpls := parseTemplates()
+	tmpls := template.Must(template.ParseFS(templateDir, "testdata/*.html"))
 
 	derpMap := integration.RunDERPAndSTUN(t, logger.Discard, "127.0.0.1")
 
