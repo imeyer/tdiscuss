@@ -8,7 +8,7 @@ on:
     workflows: ["Test"]
     types: [requested]
     branches:
-      - "releases/**"
+      - main
 
 jobs:
   Build:
