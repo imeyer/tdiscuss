@@ -1,0 +1,21 @@
+name: Build
+on:
+  push:
+    branches: main
+    paths:
+      - "!README.md"
+  workflow_run:
+    workflows: ["Test"]
+    types: [requested]
+    branches:
+      - "releases/**"
+
+jobs:
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tdiscuss
+        uses: actions/checkout@v3
+      - name: Build //cmd/tdiscuss
+        run: |
+          bazelisk build //cmd/tdiscuss:tdiscuss
