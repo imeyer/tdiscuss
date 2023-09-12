@@ -2,7 +2,9 @@ package discuss
 
 import (
 	"database/sql"
+	"fmt"
 	"html/template"
+	"log"
 	"log/slog"
 	"net/http"
 
@@ -23,9 +25,52 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	topics := make([]Topic, 0, 10)
+
+	q := `
+SELECT * FROM Topics t
+ORDER BY t.CreatedAt DESC
+LIMIT 10`
+
+	rows, err := s.db.QueryContext(r.Context(), q)
+	if err != nil {
+		s.RenderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		topic := Topic{}
+
+		err := rows.Scan(&topic.ID, &topic.Topic, &topic.User, &topic.Body, &topic.CreatedAt)
+		if err != nil {
+			s.RenderError(w, r, err, http.StatusInternalServerError)
+		}
+
+		topics = append(topics, topic)
+	}
+	s.logger.Log(r.Context(), slog.LevelDebug, "index fetch", "route", r.URL.Path, "rows", len(topics))
 	s.logger.DebugContext(r.Context(), "TEMPLATE/index.html")
 	if err := s.tmpls.ExecuteTemplate(w, "index.html", map[string]any{}); err != nil {
 		return
+	}
+}
+
+func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(code)
+
+	s.logger.InfoContext(r.Context(), fmt.Sprintf("%s: %v", r.RemoteAddr, err))
+
+	if err := s.tmpls.ExecuteTemplate(w, "error.html", struct {
+		Title, Error string
+		UserInfo     any
+	}{
+		Title: "Oh noes!",
+		Error: err.Error(),
+	}); err != nil {
+		log.Printf("%s: %v", r.RemoteAddr, err)
 	}
 }
 
