@@ -1,7 +1,6 @@
 package discuss
 
 import (
-	"database/sql"
 	"fmt"
 	"html/template"
 	"log"
@@ -14,7 +13,7 @@ import (
 type DiscussService struct {
 	tailClient *tailscale.LocalClient
 	logger     *slog.Logger
-	db         *sql.DB
+	db         *SQLiteDB
 	tmpls      *template.Template
 	httpsURL   string
 }
@@ -25,31 +24,11 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	topics := make([]Topic, 0, 10)
-
-	q := `
-SELECT * FROM Topics t
-ORDER BY t.CreatedAt DESC
-LIMIT 10`
-
-	rows, err := s.db.QueryContext(r.Context(), q)
+	topics, err := s.db.LoadTopics(r.Context())
 	if err != nil {
 		s.RenderError(w, r, err, http.StatusInternalServerError)
-		return
 	}
 
-	defer rows.Close()
-
-	for rows.Next() {
-		topic := Topic{}
-
-		err := rows.Scan(&topic.ID, &topic.Topic, &topic.User, &topic.Body, &topic.CreatedAt)
-		if err != nil {
-			s.RenderError(w, r, err, http.StatusInternalServerError)
-		}
-
-		topics = append(topics, topic)
-	}
 	s.logger.Log(r.Context(), slog.LevelDebug, "index fetch", "route", r.URL.Path, "rows", len(topics))
 	s.logger.DebugContext(r.Context(), "TEMPLATE/index.html")
 	if err := s.tmpls.ExecuteTemplate(w, "index.html", map[string]any{}); err != nil {
@@ -105,7 +84,7 @@ func (s *DiscussService) getUser(lc *tailscale.LocalClient, r *http.Request) (st
 	return whois.UserProfile.LoginName, nil
 }
 
-func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *sql.DB, tmpls *template.Template, httpsURL string) *DiscussService {
+func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *SQLiteDB, tmpls *template.Template, httpsURL string) *DiscussService {
 	return &DiscussService{
 		tailClient: tailClient,
 		db:         db,

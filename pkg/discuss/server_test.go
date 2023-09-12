@@ -1,6 +1,7 @@
 package discuss
 
 import (
+	"context"
 	"embed"
 	"html/template"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"tailscale.com/tsnet"
@@ -24,6 +26,41 @@ func TestDiscussService_DiscussionIndex(t *testing.T) {
 	var err error
 	db, err := NewSQLiteDB(":memory:")
 	assert.Nil(t, err)
+
+	topics := []struct {
+		topic *Topic
+	}{
+		{
+			topic: &Topic{
+				User:      "test@example.com",
+				Topic:     "first topic",
+				Body:      "wow",
+				CreatedAt: time.Now(),
+			},
+		},
+		{
+			topic: &Topic{
+				User:      "test2@example.com",
+				Topic:     "second topic",
+				Body:      "wow wow",
+				CreatedAt: time.Now(),
+			},
+		},
+		{
+			topic: &Topic{
+				User:      "test@example.com",
+				Topic:     "third topic",
+				Body:      "wowww",
+				CreatedAt: time.Now(),
+			},
+		},
+	}
+
+	for _, topic := range topics {
+		if err := db.SaveTopic(context.Background(), topic.topic); err != nil {
+			t.Fatalf("Can't save topics: %v", err)
+		}
+	}
 
 	tests := []struct {
 		name        string
@@ -79,7 +116,7 @@ func TestDiscussService_DiscussionIndex(t *testing.T) {
 
 	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
 
-	srv := NewService(lc, l, db.db, tmpls, "")
+	srv := NewService(lc, l, db, tmpls, "")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,7 +193,7 @@ func TestDiscussService_WhoAmI(t *testing.T) {
 
 	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
 
-	srv := NewService(lc, l, db.db, tmpls, "")
+	srv := NewService(lc, l, db, tmpls, "")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

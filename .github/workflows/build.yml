@@ -4,9 +4,15 @@ on:
     branches: main
     paths:
       - "!README.md"
+      - "!.github/workflows/golangci-lint.yml"
+      - "!.github/workflows/test.yml"
+      - "!.github/workflows/semgrep.yml"
+      - "!.gitignore"
+      - "!LICENSE"
+
   workflow_run:
     workflows: ["Test"]
-    types: [requested]
+    types: [completed]
     branches:
       - main
 

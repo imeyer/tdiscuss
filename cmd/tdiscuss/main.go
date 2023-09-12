@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"embed"
 	"flag"
 	"fmt"
@@ -86,7 +85,7 @@ func main() {
 	dsvc := discuss.NewService(
 		lc,
 		logger,
-		&sql.DB{},
+		&discuss.SQLiteDB{},
 		tmpls,
 		httpsURL,
 	)
