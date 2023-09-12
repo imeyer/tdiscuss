@@ -65,6 +65,7 @@ go_test(
     embedsrcs = [
         "testdata/index.html",
         "testdata/whoami.html",
+        "testdata/error.html",
     ],
     deps = [
         "@com_github_stretchr_testify//assert",

@@ -7,6 +7,7 @@ go_library(
     embedsrcs = [
         "tmpl/index.html",
         "tmpl/whoami.html",
+        "tmpl/error.html",
     ],
     importpath = "github.com/imeyer/tdiscuss",
     visibility = ["//visibility:private"],
