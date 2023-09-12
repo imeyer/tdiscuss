@@ -69,7 +69,7 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	checkTailscaleReady(lc)
+	err = checkTailscaleReady(lc)
 	if err != nil {
 		log.Fatal(err)
 	}
