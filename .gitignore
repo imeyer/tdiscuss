@@ -25,3 +25,7 @@ bazel-*
 
 # The tdiscuss binary
 /tdiscuss
+
+# Custom config for BuildBuddy, includes API key, not shareable right now
+
+.buildbuddy.bazelrc
