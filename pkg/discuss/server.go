@@ -31,7 +31,13 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 
 	s.logger.Log(r.Context(), slog.LevelDebug, "index fetch", "route", r.URL.Path, "rows", len(topics))
 	s.logger.DebugContext(r.Context(), "TEMPLATE/index.html")
-	if err := s.tmpls.ExecuteTemplate(w, "index.html", map[string]any{}); err != nil {
+	if err := s.tmpls.ExecuteTemplate(w, "index.html", struct {
+		Title  string
+		Topics []*Topic
+	}{
+		Title:  "tdiscuss - A Discussion Board for your Tailnet",
+		Topics: topics,
+	}); err != nil {
 		return
 	}
 }

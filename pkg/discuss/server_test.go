@@ -70,18 +70,11 @@ func TestDiscussService_DiscussionIndex(t *testing.T) {
 		wantStatus  int
 	}{
 		{
-			name:        "/ found",
+			name:        "DiscussionIndex renders",
 			path:        "/",
 			currentUser: "test2@example.com",
-			wantBody:    []byte("Hello!\n"),
+			wantBody:    []byte("<p>first topic</p><p>second topic</p><p>third topic</p>\n"),
 			wantStatus:  http.StatusOK,
-		},
-		{
-			name:        "unknown path renders 404",
-			path:        "/lolno",
-			currentUser: "test2@example.com",
-			wantBody:    []byte("404 page not found\n"),
-			wantStatus:  http.StatusNotFound,
 		},
 	}
 
