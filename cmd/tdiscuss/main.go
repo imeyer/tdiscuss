@@ -105,7 +105,6 @@ func main() {
 
 	tailnetMux := http.NewServeMux()
 	tailnetMux.HandleFunc("/", dsvc.DiscussionIndex)
-	tailnetMux.HandleFunc("/whoami", dsvc.WhoAmI)
 	tailnetMux.HandleFunc("/topic/new", dsvc.DiscussionNew)
 	tailnetMux.HandleFunc("/topic/save", dsvc.DiscussionSave)
 	tailnetMux.HandleFunc("/topic/{id}", dsvc.DiscussionTopic)
