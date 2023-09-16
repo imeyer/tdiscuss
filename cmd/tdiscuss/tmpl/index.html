@@ -1,14 +1,7 @@
-<!DOCTYPE html>
-<html>
+{{ template "header" .}}
 
-<head>
-    <title>{{ .Title }}</title>
-</head>
+{{ range .Topics }}
+<p>{{ .Topic }} :: Created on {{ .CreatedAt }} by {{ .User }}</p>
+{{ end}}
 
-<body>
-    {{ range .Topics }}
-    <p>{{ .Topic }} :: Created: {{ .CreatedAt }}</p>
-    {{ end}}
-</body>
-
-</html>
+{{ template "footer" .}}

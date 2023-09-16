@@ -35,6 +35,8 @@ func main() {
 
 	hostinfo.SetApp("tdiscuss")
 
+	ctx := context.Background()
+
 	var lvl slog.Level = slog.LevelInfo
 
 	if *debug {
@@ -68,16 +70,27 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 
-	err = checkTailscaleReady(lc)
+	err = checkTailscaleReady(ctx, lc, logger)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	ctx := context.Background()
-	httpsURL, ok := lc.ExpandSNIName(ctx, *hostname)
-	if !ok {
-		slog.InfoContext(ctx, fmt.Sprintf("%v", lc))
-		log.Fatal("HTTPS is not enabled in the admin panel")
+	tsnetstatus, err := lc.StatusWithoutPeers(ctx)
+	if err != nil {
+		slog.InfoContext(ctx, fmt.Sprintf("%v", err))
+		log.Fatalf("HTTPS is not enabled in the admin panel: %v", err)
+	}
+
+	httpsURL := tsnetstatus.CertDomains[0]
+
+	if httpsURL == "" {
+		log.Fatal("No HTTPS domain returned")
+	}
+
+	// Open DB connection
+	db, err := discuss.NewSQLiteDB(fmt.Sprintf("%s/%s", *dataDir, "discuss.db"))
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	tmpls := template.Must(template.ParseFS(templateFiles, "tmpl/*.html"))
@@ -85,7 +98,7 @@ func main() {
 	dsvc := discuss.NewService(
 		lc,
 		logger,
-		&discuss.SQLiteDB{},
+		db,
 		tmpls,
 		httpsURL,
 	)
@@ -93,6 +106,9 @@ func main() {
 	tailnetMux := http.NewServeMux()
 	tailnetMux.HandleFunc("/", dsvc.DiscussionIndex)
 	tailnetMux.HandleFunc("/whoami", dsvc.WhoAmI)
+	tailnetMux.HandleFunc("/topic/new", dsvc.DiscussionNew)
+	tailnetMux.HandleFunc("/topic/save", dsvc.DiscussionSave)
+	tailnetMux.HandleFunc("/topic/{id}", dsvc.DiscussionTopic)
 
 	// Non-TLS listener
 	ln, err := s.Listen("tcp", ":80")
@@ -131,30 +147,39 @@ func createConfigDir(dir string) error {
 	return nil
 }
 
-func checkTailscaleReady(lc *tailscale.LocalClient) error {
+func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, log *slog.Logger) error {
 	for {
-		st, err := lc.Status(context.Background())
+		st, err := lc.Status(ctx)
 		if err != nil {
 			return fmt.Errorf("error retrieving tailscale status; retrying: %v", err)
 		} else {
 			switch st.BackendState {
 			case "NoState":
+				log.Info(fmt.Sprintf("%v", st), "state", st.BackendState)
+				time.Sleep(2 * time.Second)
 				continue
 			case "NeedsLogin":
-				slog.Info(fmt.Sprintf("Login to tailscale at %s", st.AuthURL))
+				log.Info(fmt.Sprintf("login to tailscale at %s", st.AuthURL), "state", st.BackendState)
+				time.Sleep(15 * time.Second)
 				continue
 			case "NeedsMachineAuth":
-				slog.Info(fmt.Sprintf("%v", st))
+				log.Info(fmt.Sprintf("%v", st), "state", st.BackendState)
 				continue
 			case "Stopped":
+				log.Info("tsnet stopped", "state", st.BackendState)
 				return fmt.Errorf("%v", err)
 			case "Starting":
+				log.Info("starting tsnet", "state", st.BackendState)
 				continue
 			case "Running":
+				nopeers, err := lc.StatusWithoutPeers(ctx)
+				if err != nil {
+					log.Error(err.Error())
+				}
+				log.Info("tsnet running", "state", st.BackendState, "certDomains", nopeers.CertDomains)
 				return nil
 			}
 		}
-		time.Sleep(5 * time.Second)
 	}
 }
 

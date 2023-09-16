@@ -37,8 +37,9 @@ func TestLoadTopics(t *testing.T) {
 	}
 
 	for _, topic := range topics {
-		err := db.SaveTopic(ctx, topic)
+		topicID, err := db.SaveTopic(ctx, topic)
 		assert.Nil(t, err)
+		assert.NotEqual(t, 0, topicID, "Last ID should not be zero")
 	}
 
 	got, err := db.LoadTopics(ctx)
@@ -57,8 +58,9 @@ func TestSaveTopics(t *testing.T) {
 
 	ctx := context.Background()
 
-	err = db.SaveTopic(ctx, topic)
+	topicID, err := db.SaveTopic(ctx, topic)
 	assert.Nil(t, err)
+	assert.NotEqual(t, 0, topicID, "Topic ID should not be 0")
 }
 
 func TestSQLiteDB_Ping(t *testing.T) {

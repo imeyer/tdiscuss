@@ -57,24 +57,29 @@ func (s *SQLiteDB) LoadTopics(ctx context.Context) ([]*Topic, error) {
 	return topics, rows.Err()
 }
 
-func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) error {
+func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	result, err := s.db.Exec("INSERT OR REPLACE INTO Topics (Topic, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.Topic, topic.Body, topic.User, topic.CreatedAt.Unix())
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	if rows != 1 {
-		return fmt.Errorf("expected to add 1 row, added %d instead", rows)
+		return 0, fmt.Errorf("expected to add 1 row, added %d instead", rows)
 	}
-	return nil
+
+	lid, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return lid, nil
 }
 
 func (s *SQLiteDB) Ping(ctx context.Context) (bool, error) {

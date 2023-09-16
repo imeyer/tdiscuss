@@ -1,0 +1,12 @@
+{{ template "header" .}}
+
+<form action="/topic/save" method="POST">
+    <label for="topic">Topic:</label><br />
+    <input type="text" id="topic" name="topic"><br />
+
+    <label for="topic_body">Body:</label><br>
+    <textarea rows="10" cols="25" name="topic_body"></textarea><br />
+    <button type="submit" onclick="">Post it!</button>
+</form>
+
+{{ template "footer" .}}
