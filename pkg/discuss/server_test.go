@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,9 +23,16 @@ import (
 //go:embed testdata/*.html
 var templateDir embed.FS
 
-func TestDiscussService_DiscussionIndex(t *testing.T) {
+func TestDiscussService(t *testing.T) {
 	var err error
-	db, err := NewSQLiteDB(":memory:")
+
+	l := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelDebug,
+	}))
+
+	db, err := NewSQLiteDB(":memory:", l)
+	db.logger = l
 	assert.Nil(t, err)
 
 	topics := []struct {
@@ -74,20 +82,36 @@ func TestDiscussService_DiscussionIndex(t *testing.T) {
 		wantStatus  int
 	}{
 		{
-			name:        "DiscussionIndex renders",
+			name:        "DiscussionIndex via GET returns 200 with Topics",
 			path:        "/",
-			method:      "GET",
+			method:      http.MethodGet,
 			currentUser: "test2@example.com",
 			wantBody:    []byte("<p>first topic</p><p>second topic</p><p>third topic</p>\n"),
 			wantStatus:  http.StatusOK,
 		},
 		{
-			name:        "DiscussionIndex does not allow POST",
+			name:        "DiscussionIndex does not allow POST method",
 			path:        "/",
-			method:      "POST",
+			method:      http.MethodPost,
 			currentUser: "test2@example.com",
-			wantBody:    []byte("HTTP method not allowed\n"),
+			wantBody:    []byte("Method Not Allowed"),
 			wantStatus:  http.StatusMethodNotAllowed,
+		},
+		{
+			name:        "DiscussionNew does not allow POST method",
+			path:        "/topic/new",
+			method:      http.MethodPost,
+			currentUser: "test2@example.com",
+			wantBody:    []byte("Method Not Allowed"),
+			wantStatus:  http.StatusMethodNotAllowed,
+		},
+		{
+			name:        "DiscussionNew via GET returns 200",
+			path:        "/topic/new",
+			method:      http.MethodGet,
+			currentUser: "test2@example.com",
+			wantBody:    []byte("anonymouse@user\n"),
+			wantStatus:  http.StatusOK,
 		},
 	}
 
@@ -120,16 +144,25 @@ func TestDiscussService_DiscussionIndex(t *testing.T) {
 
 	assert.Nil(t, err)
 
-	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
-
 	srv := NewService(lc, l, db, tmpls, "")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Request to %v via %v", tt.path, tt.method)
+
 			r := httptest.NewRequest(tt.method, tt.path, nil)
 			w := httptest.NewRecorder()
-			srv.DiscussionIndex(w, r)
+
+			switch tt.path {
+			case "/":
+				srv.DiscussionIndex(w, r)
+			case "/topic/new":
+				srv.DiscussionNew(w, r)
+			case "/topic/save":
+				srv.DiscussionSave(w, r)
+			default:
+				srv.DiscussionIndex(w, r)
+			}
 
 			assert.Equal(t, tt.wantStatus, w.Code, tt.name)
 

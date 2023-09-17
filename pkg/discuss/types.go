@@ -3,16 +3,16 @@ package discuss
 import "time"
 
 type Topic struct {
-	ID        int
-	User      string
-	Topic     string
-	Body      string
-	CreatedAt time.Time
+	ID        int64     `db:"ID"`
+	User      string    `db:"User"`
+	Topic     string    `db:"Topic"`
+	Body      string    `db:"Body"`
+	CreatedAt time.Time `db:"CreatedAt"`
 }
 
 type Post struct {
-	ID        int
-	Body      string
-	CreatedAt time.Time
-	User      string
+	ID        int64     `db:"ID"`
+	Body      string    `db:"Body"`
+	CreatedAt time.Time `db:"CreatedAt"`
+	User      string    `db:"User"`
 }

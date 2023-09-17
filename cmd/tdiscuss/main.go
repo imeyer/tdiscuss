@@ -77,7 +77,7 @@ func main() {
 
 	tsnetstatus, err := lc.StatusWithoutPeers(ctx)
 	if err != nil {
-		slog.InfoContext(ctx, fmt.Sprintf("%v", err))
+		logger.InfoContext(ctx, fmt.Sprintf("%v", err))
 		log.Fatalf("HTTPS is not enabled in the admin panel: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func main() {
 	}
 
 	// Open DB connection
-	db, err := discuss.NewSQLiteDB(fmt.Sprintf("%s/%s", *dataDir, "discuss.db"))
+	db, err := discuss.NewSQLiteDB(fmt.Sprintf("%s/%s", *dataDir, "discuss.db"), logger)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func main() {
 	}
 	defer ln.Close()
 
-	slog.InfoContext(ctx, fmt.Sprintf("listening on http://%s", *hostname))
+	logger.InfoContext(ctx, fmt.Sprintf("listening on http://%s", *hostname))
 
 	go func() { log.Fatal(http.Serve(ln, tailnetMux)) }()
 
@@ -127,7 +127,7 @@ func main() {
 	}
 	defer tln.Close()
 
-	slog.InfoContext(ctx, fmt.Sprintf("listening on https://%s", httpsURL))
+	logger.InfoContext(ctx, fmt.Sprintf("listening on https://%s", httpsURL))
 
 	log.Fatal(http.Serve(tln, tailnetMux))
 }
@@ -146,7 +146,7 @@ func createConfigDir(dir string) error {
 	return nil
 }
 
-func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, log *slog.Logger) error {
+func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger *slog.Logger) error {
 	for {
 		st, err := lc.Status(ctx)
 		if err != nil {
@@ -154,28 +154,28 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, log *sl
 		} else {
 			switch st.BackendState {
 			case "NoState":
-				log.Info(fmt.Sprintf("%v", st), "state", st.BackendState)
+				logger.InfoContext(ctx, fmt.Sprintf("%v", st), "state", st.BackendState)
 				time.Sleep(2 * time.Second)
 				continue
 			case "NeedsLogin":
-				log.Info(fmt.Sprintf("login to tailscale at %s", st.AuthURL), "state", st.BackendState)
+				logger.InfoContext(ctx, fmt.Sprintf("login to tailscale at %s", st.AuthURL), "state", st.BackendState)
 				time.Sleep(15 * time.Second)
 				continue
 			case "NeedsMachineAuth":
-				log.Info(fmt.Sprintf("%v", st), "state", st.BackendState)
+				logger.InfoContext(ctx, fmt.Sprintf("%v", st), "state", st.BackendState)
 				continue
 			case "Stopped":
-				log.Info("tsnet stopped", "state", st.BackendState)
+				logger.InfoContext(ctx, "tsnet stopped", "state", st.BackendState)
 				return fmt.Errorf("%v", err)
 			case "Starting":
-				log.Info("starting tsnet", "state", st.BackendState)
+				logger.InfoContext(ctx, "starting tsnet", "state", st.BackendState)
 				continue
 			case "Running":
 				nopeers, err := lc.StatusWithoutPeers(ctx)
 				if err != nil {
-					log.Error(err.Error())
+					logger.ErrorContext(ctx, err.Error())
 				}
-				log.Info("tsnet running", "state", st.BackendState, "certDomains", nopeers.CertDomains)
+				logger.InfoContext(ctx, "tsnet running", "state", st.BackendState, "certDomains", nopeers.CertDomains)
 				return nil
 			}
 		}
@@ -183,7 +183,7 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, log *sl
 }
 
 func newLogger(logLevel *slog.Level) *slog.Logger {
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     logLevel,
 	}))

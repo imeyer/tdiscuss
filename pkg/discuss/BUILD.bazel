@@ -8,11 +8,16 @@ go_library(
         "server.go",
         "types.go",
     ],
-    embedsrcs = ["schema.sql"],
+    embedsrcs = [
+        "schema/posts.sql",
+        "schema/topics.sql",
+    ],
     importpath = "github.com/imeyer/tdiscuss/pkg/discuss",
     visibility = ["//visibility:public"],
     deps = [
         "@com_tailscale//client/tailscale",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//tailcfg",
         "@org_modernc_sqlite//:sqlite",
     ],
 )
@@ -24,11 +29,13 @@ go_test(
         "db_test.go",
         "server_test.go",
     ],
+    data = glob(["testdata/**"]),
     embed = [":discuss"],
     embedsrcs = [
         "testdata/whoami.html",
         "testdata/index.html",
         "testdata/error.html",
+        "testdata/newtopic.html",
     ],
     deps = [
         "@com_github_stretchr_testify//assert",
@@ -46,11 +53,16 @@ go_library(
         "server.go",
         "types.go",
     ],
-    embedsrcs = ["schema.sql"],
+    embedsrcs = [
+        "schema/topics.sql",
+        "schema/posts.sql",
+    ],
     importpath = "github.com/imeyer/tdiscuss",
     visibility = ["//visibility:public"],
     deps = [
         "@com_tailscale//client/tailscale",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//tailcfg",
         "@org_modernc_sqlite//:sqlite",
     ],
 )
@@ -68,6 +80,7 @@ go_test(
         "testdata/index.html",
         "testdata/whoami.html",
         "testdata/error.html",
+        "testdata/newtopic.html",
     ],
     deps = [
         "@com_github_stretchr_testify//assert",

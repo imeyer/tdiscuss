@@ -1,15 +1,17 @@
 package discuss
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
-	"log"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"tailscale.com/client/tailscale"
+	"tailscale.com/client/tailscale/apitype"
+	"tailscale.com/tailcfg"
 )
 
 const formDataLimit = 32 * 1024
@@ -28,7 +30,7 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
@@ -58,26 +60,42 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 
-	userInfo, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
-	if err != nil {
-		s.RenderError(w, r, err, http.StatusInternalServerError)
-		return
+	var user *apitype.WhoIsResponse
+
+	// We do nothing with err here because we will assign an anonymous user below
+	// TODO:imeyer Never let anonymous users post? Throw error if can't resolve who you are? Tests?
+	userInfo, _ := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+
+	if userInfo == nil {
+		user = &apitype.WhoIsResponse{
+			Node: &tailcfg.Node{},
+			UserProfile: &tailcfg.UserProfile{
+				ID:          0,
+				LoginName:   "anonymouse@user",
+				DisplayName: "Anonymouse User",
+			},
+			CapMap: map[tailcfg.PeerCapability][]json.RawMessage{},
+		}
+	} else {
+		user = userInfo
 	}
 
-	err = s.tmpls.ExecuteTemplate(w, "newtopic.html", struct {
-		User  string
+	err := s.tmpls.ExecuteTemplate(w, "newtopic.html", struct {
+		User  *apitype.WhoIsResponse
 		Title string
 	}{
-		User:  userInfo.UserProfile.LoginName,
+		User:  user,
 		Title: "New topic!",
 	})
+
 	if err != nil {
-		s.RenderError(w, r, err, http.StatusInternalServerError)
+		s.logger.DebugContext(r.Context(), err.Error())
+		s.RenderError(w, r, err, http.StatusUnsupportedMediaType)
 		return
 	}
 }
@@ -88,7 +106,7 @@ func (s *DiscussService) DiscussionTopic(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if r.Method != "GET" {
+	if r.Method != http.MethodGet {
 		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
@@ -142,6 +160,7 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 	topicID, err := s.db.SaveTopic(r.Context(), topic)
 	if err != nil {
 		s.RenderError(w, r, err, http.StatusInternalServerError)
+		return
 	}
 
 	s.logger.DebugContext(r.Context(), "topic created", "topic_id", topicID)
@@ -149,29 +168,9 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(code)
-
-	s.logger.InfoContext(r.Context(), fmt.Sprintf("%s: %v", r.RemoteAddr, err))
-
-	if err := s.tmpls.ExecuteTemplate(w, "error.html", struct {
-		Title, Error string
-		UserInfo     any
-	}{
-		Title: "Oh noes!",
-		Error: err.Error(),
-	}); err != nil {
-		log.Printf("%s: %v", r.RemoteAddr, err)
-	}
-}
-
-func (s *DiscussService) getUser(lc *tailscale.LocalClient, r *http.Request) (string, error) {
-	whois, err := lc.WhoIs(r.Context(), r.RemoteAddr)
-	if err != nil {
-		return "anonymouse user", nil
-	}
-
-	return whois.UserProfile.LoginName, nil
+	w.Write([]byte(http.StatusText(code)))
 }
 
 func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *SQLiteDB, tmpls *template.Template, httpsURL string) *DiscussService {

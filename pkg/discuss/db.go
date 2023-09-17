@@ -5,65 +5,105 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
-	"sync"
+	"log/slog"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 type SQLiteDB struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db     *sql.DB
+	logger *slog.Logger
 }
 
-//go:embed schema.sql
-var sqlSchema string
+//go:embed schema/topics.sql
+var topicsSchema string
 
-func NewSQLiteDB(f string) (*SQLiteDB, error) {
+//go:embed schema/posts.sql
+var postsSchema string
+
+func NewSQLiteDB(f string, logger *slog.Logger) (*SQLiteDB, error) {
+	logger.Debug("connecting to database", "database", f)
 	db, err := sql.Open("sqlite", f)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Ping(); err != nil {
+
+	topics, err := db.Exec(topicsSchema)
+	if err != nil {
+		logger.Debug(err.Error())
 		return nil, err
 	}
+	logger.Debug("table created", "table", topics)
 
-	if _, err = db.Exec(sqlSchema); err != nil {
+	posts, err := db.Exec(postsSchema)
+	if err != nil {
+		logger.Debug(err.Error())
 		return nil, err
 	}
+	logger.Debug("table created", "table", posts)
 
-	return &SQLiteDB{db: db}, nil
+	return &SQLiteDB{db: db, logger: logger}, nil
 }
 
 func (s *SQLiteDB) LoadTopics(ctx context.Context) ([]*Topic, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	var topics []*Topic
-	rows, err := s.db.Query("SELECT ID, User, Topic, Body, CreatedAt FROM Topics")
+
+	rows, err := s.db.QueryContext(ctx, "SELECT ID, User, Topic, Body, CreatedAt FROM Topics")
 	if err != nil {
 		return nil, err
 	}
+
 	for rows.Next() {
-		topic := new(Topic)
 		var createdAt int64
+
+		topic := new(Topic)
+
 		err := rows.Scan(&topic.ID, &topic.User, &topic.Topic, &topic.Body, &createdAt)
 		if err != nil {
 			return nil, err
 		}
+
 		topic.CreatedAt = time.Unix(createdAt, 0).UTC()
+
 		topics = append(topics, topic)
 	}
+
 	return topics, rows.Err()
 }
 
-func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*Post, error) {
+	var posts []*Post
 
-	result, err := s.db.Exec("INSERT OR REPLACE INTO Topics (Topic, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.Topic, topic.Body, topic.User, topic.CreatedAt.Unix())
+	s.logger.DebugContext(ctx, "LoadTopic()", "query", fmt.Sprintf("SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = %d ORDER BY CreatedAt DESC", id))
+
+	rows, err := s.db.QueryContext(ctx, "SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = ? ORDER BY CreatedAt DESC", id)
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+
+	for rows.Next() {
+		var createdAt int64
+
+		post := new(Post)
+
+		err := rows.Scan(&post.User, &post.ID, &post.Body, &createdAt)
+		if err != nil {
+			return nil, err
+		}
+
+		post.CreatedAt = time.Unix(createdAt, 0).UTC()
+
+		posts = append(posts, post)
+	}
+
+	return posts, rows.Err()
+}
+
+func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err error) {
+	result, err := s.db.ExecContext(ctx, "INSERT OR REPLACE INTO topics (Topic, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.Topic, topic.Body, topic.User, topic.CreatedAt.Unix())
+	if err != nil {
+		s.logger.ErrorContext(ctx, fmt.Sprintf("commit failed: %v\n", err))
 	}
 
 	rows, err := result.RowsAffected()
@@ -79,16 +119,38 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 	if err != nil {
 		return 0, err
 	}
+
+	topic.ID = lid
+
+	s.logger.DebugContext(ctx, "sending topic to SavePost()", "topic_id", topic.ID, "user", topic.User)
+
+	_, err = s.SavePost(ctx, topic)
+	if err != nil {
+		return 0, fmt.Errorf("post did not save: %v", err)
+	}
+
 	return lid, nil
 }
 
-func (s *SQLiteDB) Ping(ctx context.Context) (bool, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	err := s.db.PingContext(ctx)
+func (s *SQLiteDB) SavePost(ctx context.Context, topic *Topic) (postid int64, err error) {
+	result, err := s.db.ExecContext(ctx, "INSERT INTO posts (TopicID, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.ID, topic.Body, topic.User, topic.CreatedAt.Unix())
 	if err != nil {
-		return false, err
+		s.logger.ErrorContext(ctx, err.Error())
+		return 0, err
 	}
-	return true, nil
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if rows != 1 {
+		return 0, fmt.Errorf("expected to add 1 row, added %d instead", rows)
+	}
+
+	postid, err = result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return postid, nil
 }

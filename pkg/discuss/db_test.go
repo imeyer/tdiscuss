@@ -2,8 +2,11 @@ package discuss
 
 import (
 	"context"
-	"database/sql"
 	_ "embed"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -11,12 +14,18 @@ import (
 )
 
 func TestLoadTopics(t *testing.T) {
-	db, err := NewSQLiteDB(":memory:")
+	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelDebug,
+	}))
+
+	db, err := NewSQLiteDB(":memory:", l)
+	db.logger = l
 	assert.Nil(t, err)
 
 	// stable timestamps
 	ct1 := time.Now().UTC().Unix()
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 	ct2 := time.Now().UTC().Unix()
 
 	ctx := context.Background()
@@ -50,51 +59,53 @@ func TestLoadTopics(t *testing.T) {
 	assert.Equal(t, topics[0].CreatedAt.UTC(), got[0].CreatedAt, "topic1: Timestamps do not match")
 }
 
-func TestSaveTopics(t *testing.T) {
-	db, err := NewSQLiteDB(":memory:")
+func TestLoadTopic(t *testing.T) {
+	ctx := context.Background()
+
+	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
+
+	db, err := NewSQLiteDB(":memory:", l)
+	db.logger = l
 	assert.Nil(t, err)
 
-	topic := &Topic{1, "test@test.com", "Topic1", "Body1", time.Now()}
+	ct1 := time.Now().UTC().Unix()
+
+	topic := &Topic{
+		User:      "test@example.com",
+		Topic:     "topic1",
+		Body:      "body1",
+		CreatedAt: time.Unix(ct1, 0),
+	}
+
+	topicID, err := db.SaveTopic(ctx, topic)
+	assert.Nil(t, err)
+
+	row, err := db.LoadTopic(ctx, topicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("rows:%v", row)
+	assert.NotNil(t, row, row)
+
+	assert.Equal(t, topic.Body, row[0].Body, fmt.Sprintf("have (%v), want (%v)", row[0].Body, topic.Body))
+	assert.Equal(t, topic.CreatedAt.UTC(), row[0].CreatedAt, fmt.Sprintf("have (%v), want (%v)", row[0].CreatedAt, topic.CreatedAt))
+}
+
+func TestSaveTopics(t *testing.T) {
+	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
+
+	db, err := NewSQLiteDB(":memory:", l)
+	db.logger = l
+	assert.Nil(t, err)
+
+	topic := &Topic{User: "test@test.com", Topic: "Topic1", Body: "Body1", CreatedAt: time.Now()}
 
 	ctx := context.Background()
 
 	topicID, err := db.SaveTopic(ctx, topic)
 	assert.Nil(t, err)
-	assert.NotEqual(t, 0, topicID, "Topic ID should not be 0")
-}
 
-func TestSQLiteDB_Ping(t *testing.T) {
-	db, err := NewSQLiteDB(":memory:")
-	assert.Nil(t, err)
-
-	type fields struct {
-		db *sql.DB
-	}
-	type args struct {
-		ctx context.Context
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    bool
-		wantErr bool
-	}{
-		{"TestPing", fields{db: db.db}, args{context.Background()}, true, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			s := &SQLiteDB{
-				db: tt.fields.db,
-			}
-			got, err := s.Ping(tt.args.ctx)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SQLiteDB.Ping() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("SQLiteDB.Ping() = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	var wantid int64 = 1
+	assert.Equal(t, wantid, topicID, fmt.Sprintf("have (%v), want (%v)", topicID, wantid))
 }
