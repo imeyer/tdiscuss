@@ -31,7 +31,7 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -56,12 +56,12 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 
 func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/topic/new" {
-		s.RenderError(w, r, fmt.Errorf("404 page not found"), http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -102,24 +102,24 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 
 func (s *DiscussService) DiscussionTopic(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, "/topic/") {
-		s.RenderError(w, r, fmt.Errorf("404 page not found"), http.StatusNotFound)
+		http.NotFound(w, r)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
 		return
 	}
 }
 
 func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/topic/save" {
-		s.RenderError(w, r, fmt.Errorf("404 page not found"), http.StatusNotFound)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusNotFound)
 		return
 	}
 
 	if r.Method != "POST" {
-		s.RenderError(w, r, fmt.Errorf("HTTP method not allowed"), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -135,9 +135,10 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 		err = r.ParseForm()
 	} else {
 		s.logger.DebugContext(r.Context(), "%s: unknown content type: %s", r.RemoteAddr, r.Header.Get("Content-Type"))
-		http.Error(w, "bad content-type, should be a form", http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
+
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "%s: bad form: %v", r.RemoteAddr, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -147,7 +148,7 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 	if !r.Form.Has("topic") && !r.Form.Has("topic_body") {
 		s.logger.DebugContext(r.Context(), r.Form.Encode())
 		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: topic, and topic_body are required", r.RemoteAddr))
-		http.Error(w, "include form data:values topic and topic_body", http.StatusBadRequest)
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
 	"time"
 
@@ -14,21 +13,21 @@ import (
 )
 
 func TestLoadTopics(t *testing.T) {
-	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+	ctx := context.Background()
+
+	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelDebug,
 	}))
 
 	db, err := NewSQLiteDB(":memory:", l)
-	db.logger = l
 	assert.Nil(t, err)
 
-	// stable timestamps
+	db.logger = l
+
 	ct1 := time.Now().UTC().Unix()
 	time.Sleep(1 * time.Second)
 	ct2 := time.Now().UTC().Unix()
-
-	ctx := context.Background()
 
 	topics := []*Topic{
 		{
@@ -54,9 +53,9 @@ func TestLoadTopics(t *testing.T) {
 	got, err := db.LoadTopics(ctx)
 	assert.Nil(t, err)
 
-	assert.Equal(t, topics[1].Topic, got[1].Topic, "topic2: Topics do not match")
-	assert.Equal(t, topics[1].CreatedAt.UTC(), got[1].CreatedAt, "topic2: Timestamps do not match")
-	assert.Equal(t, topics[0].CreatedAt.UTC(), got[0].CreatedAt, "topic1: Timestamps do not match")
+	assert.Equal(t, topics[1].Topic, got[1].Topic, fmt.Sprintf("Topic[1]: have (%v), want (%v)\n", topics[1].Topic, got[1].Topic))
+	assert.Equal(t, topics[1].CreatedAt.UTC(), got[1].CreatedAt, fmt.Sprintf("CreatedAt[1]: have (%v), want (%v)\n", topics[1].CreatedAt.UTC(), got[1].CreatedAt))
+	assert.Equal(t, topics[0].CreatedAt.UTC(), got[0].CreatedAt, fmt.Sprintf("CreatedAt[0]: have (%v), want (%v)\n", topics[0].CreatedAt.UTC(), got[0].CreatedAt))
 }
 
 func TestLoadTopic(t *testing.T) {
@@ -65,8 +64,9 @@ func TestLoadTopic(t *testing.T) {
 	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
 
 	db, err := NewSQLiteDB(":memory:", l)
-	db.logger = l
 	assert.Nil(t, err)
+
+	db.logger = l
 
 	ct1 := time.Now().UTC().Unix()
 
@@ -85,7 +85,6 @@ func TestLoadTopic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Logf("rows:%v", row)
 	assert.NotNil(t, row, row)
 
 	assert.Equal(t, topic.Body, row[0].Body, fmt.Sprintf("have (%v), want (%v)", row[0].Body, topic.Body))
@@ -96,8 +95,9 @@ func TestSaveTopics(t *testing.T) {
 	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{}))
 
 	db, err := NewSQLiteDB(":memory:", l)
-	db.logger = l
 	assert.Nil(t, err)
+
+	db.logger = l
 
 	topic := &Topic{User: "test@test.com", Topic: "Topic1", Body: "Body1", CreatedAt: time.Now()}
 

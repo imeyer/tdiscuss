@@ -113,6 +113,14 @@ func TestDiscussService(t *testing.T) {
 			wantBody:    []byte("anonymouse@user\n"),
 			wantStatus:  http.StatusOK,
 		},
+		{
+			name:        "DiscussionSave does not allow GET method",
+			path:        "/topic/save",
+			method:      http.MethodGet,
+			currentUser: "test2@example.com",
+			wantBody:    []byte(http.StatusText(http.StatusMethodNotAllowed)),
+			wantStatus:  http.StatusMethodNotAllowed,
+		},
 	}
 
 	tmpls := template.Must(template.ParseFS(templateDir, "testdata/*.html"))

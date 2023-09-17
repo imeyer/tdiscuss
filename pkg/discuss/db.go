@@ -23,25 +23,26 @@ var topicsSchema string
 var postsSchema string
 
 func NewSQLiteDB(f string, logger *slog.Logger) (*SQLiteDB, error) {
-	logger.Debug("connecting to database", "database", f)
 	db, err := sql.Open("sqlite", f)
 	if err != nil {
 		return nil, err
 	}
 
-	topics, err := db.Exec(topicsSchema)
-	if err != nil {
-		logger.Debug(err.Error())
+	if err := db.Ping(); err != nil {
 		return nil, err
 	}
-	logger.Debug("table created", "table", topics)
 
-	posts, err := db.Exec(postsSchema)
+	_, err = db.Exec(topicsSchema)
 	if err != nil {
 		logger.Debug(err.Error())
 		return nil, err
 	}
-	logger.Debug("table created", "table", posts)
+
+	_, err = db.Exec(postsSchema)
+	if err != nil {
+		logger.Debug(err.Error())
+		return nil, err
+	}
 
 	return &SQLiteDB{db: db, logger: logger}, nil
 }
@@ -103,7 +104,7 @@ func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*Post, error) {
 func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err error) {
 	result, err := s.db.ExecContext(ctx, "INSERT OR REPLACE INTO topics (Topic, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.Topic, topic.Body, topic.User, topic.CreatedAt.Unix())
 	if err != nil {
-		s.logger.ErrorContext(ctx, fmt.Sprintf("commit failed: %v\n", err))
+		s.logger.ErrorContext(ctx, fmt.Sprintf("commit failed: %v", err))
 	}
 
 	rows, err := result.RowsAffected()
@@ -112,7 +113,7 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 	}
 
 	if rows != 1 {
-		return 0, fmt.Errorf("expected to add 1 row, added %d instead", rows)
+		return 0, fmt.Errorf("expected to add 1 row, added %d row(s)", rows)
 	}
 
 	lid, err := result.LastInsertId()
@@ -122,7 +123,7 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 
 	topic.ID = lid
 
-	s.logger.DebugContext(ctx, "sending topic to SavePost()", "topic_id", topic.ID, "user", topic.User)
+	s.logger.DebugContext(ctx, "sending topic to SavePost()", "topic_id", topic.ID, "user", topic.User, "ts", topic.CreatedAt)
 
 	_, err = s.SavePost(ctx, topic)
 	if err != nil {
