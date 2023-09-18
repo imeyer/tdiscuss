@@ -123,27 +123,44 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	userInfo, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
-	if err != nil {
-		s.RenderError(w, r, err, http.StatusInternalServerError)
-		return
+	var user *apitype.WhoIsResponse
+
+	userInfo, _ := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	if userInfo == nil {
+		user = &apitype.WhoIsResponse{
+			Node: &tailcfg.Node{},
+			UserProfile: &tailcfg.UserProfile{
+				ID:          0,
+				LoginName:   "anonymouse@user",
+				DisplayName: "Anonymouse User",
+			},
+			CapMap: map[tailcfg.PeerCapability][]json.RawMessage{},
+		}
+	} else {
+		user = userInfo
 	}
 
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
-		err = r.ParseMultipartForm(formDataLimit)
+		err := r.ParseMultipartForm(formDataLimit)
+		if err != nil {
+			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", r.RemoteAddr, r.Header.Get("Content-Type"))
+		}
 	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
-		err = r.ParseForm()
+		err := r.ParseForm()
+		if err != nil {
+			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", r.RemoteAddr, r.Header.Get("Content-Type"))
+		}
 	} else {
-		s.logger.DebugContext(r.Context(), "%s: unknown content type: %s", r.RemoteAddr, r.Header.Get("Content-Type"))
+		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: unknown content type: %s", r.RemoteAddr, r.Header.Get("Content-Type")))
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
-	if err != nil {
-		s.logger.DebugContext(r.Context(), "%s: bad form: %v", r.RemoteAddr, err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	// if err != nil {
+	// 	s.logger.DebugContext(r.Context(), "%s: bad form: %v", r.RemoteAddr, err)
+	// 	http.Error(w, err.Error(), http.StatusBadRequest)
+	// 	return
+	// }
 
 	if !r.Form.Has("topic") && !r.Form.Has("topic_body") {
 		s.logger.DebugContext(r.Context(), r.Form.Encode())
@@ -156,7 +173,7 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 	topic.Topic = r.Form.Get("topic")
 	topic.Body = r.Form.Get("topic_body")
 	topic.CreatedAt = time.Now()
-	topic.User = userInfo.UserProfile.LoginName
+	topic.User = user.UserProfile.LoginName
 
 	topicID, err := s.db.SaveTopic(r.Context(), topic)
 	if err != nil {
@@ -165,13 +182,22 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 	}
 
 	s.logger.DebugContext(r.Context(), "topic created", "topic_id", topicID)
-	http.Redirect(w, r, fmt.Sprintf("https://%s/topic/%d", s.httpsURL, topicID), http.StatusSeeOther)
+	s.logger.DebugContext(r.Context(), "redirecting to topic", "scheme", r.URL.Scheme, "host", r.URL.Host)
+	http.Redirect(w, r, fmt.Sprintf("%v://%s/topic/%d", r.URL.Scheme, r.URL.Host, topicID), http.StatusSeeOther)
 }
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
+	s.logger.DebugContext(r.Context(), "rendering error", "error", err.Error())
+	responseBody := []byte(http.StatusText(code))
 	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
 	w.WriteHeader(code)
-	w.Write([]byte(http.StatusText(code)))
+
+	written, err := w.Write([]byte(http.StatusText(code)))
+	if err != nil {
+		s.logger.DebugContext(r.Context(), err.Error())
+	}
+	s.logger.DebugContext(r.Context(), "error response written", "bytes", written)
 }
 
 func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *SQLiteDB, tmpls *template.Template, httpsURL string) *DiscussService {

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +79,7 @@ func TestDiscussService(t *testing.T) {
 		path        string
 		method      string
 		currentUser string
+		sendBody    string
 		wantBody    []byte
 		wantStatus  int
 	}{
@@ -121,6 +123,14 @@ func TestDiscussService(t *testing.T) {
 			wantBody:    []byte(http.StatusText(http.StatusMethodNotAllowed)),
 			wantStatus:  http.StatusMethodNotAllowed,
 		},
+		{
+			name:        "DiscussionSave saves and redirects to the new TopicID",
+			path:        "/topic/save",
+			method:      http.MethodPost,
+			currentUser: "test2@example.com",
+			sendBody:    "topic=Test%20topic1",
+			wantStatus:  http.StatusSeeOther,
+		},
 	}
 
 	tmpls := template.Must(template.ParseFS(templateDir, "testdata/*.html"))
@@ -158,7 +168,16 @@ func TestDiscussService(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Logf("Request to %v via %v", tt.path, tt.method)
 
-			r := httptest.NewRequest(tt.method, tt.path, nil)
+			var r *http.Request
+
+			switch tt.method {
+			case http.MethodPost:
+				r = httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.sendBody))
+				r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			default:
+				r = httptest.NewRequest(tt.method, tt.path, nil)
+			}
+
 			w := httptest.NewRecorder()
 
 			switch tt.path {
