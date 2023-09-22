@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 func TestLoadTopics(t *testing.T) {
 	ctx := context.Background()
 
-	l := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{
+	l := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     slog.LevelDebug,
 	}))

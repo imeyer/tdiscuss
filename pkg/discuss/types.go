@@ -1,6 +1,15 @@
 package discuss
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var (
+	ErrTopicNoTopic         = errors.New("topic is required")
+	ErrTopicNoTopicBody     = errors.New("topic_body is required")
+	ErrNoPostsFoundForTopic = errors.New("no posts found for topic")
+)
 
 type Topic struct {
 	ID        int64     `db:"ID"`

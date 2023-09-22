@@ -128,8 +128,51 @@ func TestDiscussService(t *testing.T) {
 			path:        "/topic/save",
 			method:      http.MethodPost,
 			currentUser: "test2@example.com",
-			sendBody:    "topic=Test%20topic1",
+			sendBody:    "topic=Test%20topic1&topic_body=wow",
 			wantStatus:  http.StatusSeeOther,
+		},
+		{
+			name:        "DiscussionSave fails with no topic",
+			path:        "/topic/save",
+			method:      http.MethodPost,
+			currentUser: "test2@example.com",
+			sendBody:    "topic_body=Test%20body1",
+			wantStatus:  http.StatusPreconditionFailed,
+			wantBody:    []byte("topic is required\n"),
+		},
+		{
+			name:        "DiscussionSave fails with no topic_body",
+			path:        "/topic/save",
+			method:      http.MethodPost,
+			currentUser: "test2@example.com",
+			sendBody:    "topic=Test%20topic1",
+			wantStatus:  http.StatusPreconditionFailed,
+			wantBody:    []byte("topic_body is required\n"),
+		},
+		{
+			name:        "DiscussionTopic via GET returns 200",
+			path:        "/topic/1",
+			method:      http.MethodGet,
+			currentUser: "test2@example.com",
+			sendBody:    "topic=Test%20topic1",
+			wantStatus:  http.StatusOK,
+			wantBody:    []byte("test@example.com<br />\n"),
+		},
+		{
+			name:        "DiscussionTopic via HEAD returns 200 with no Body",
+			path:        "/topic/1",
+			method:      http.MethodHead,
+			currentUser: "test2@example.com",
+			wantStatus:  http.StatusOK,
+			wantBody:    []byte(""),
+		},
+		{
+			name:        "DiscussionTopic via GET returns 404 for a topic that doesn't exist",
+			path:        "/topic/311",
+			method:      http.MethodGet,
+			currentUser: "test2@example.com",
+			wantStatus:  http.StatusNotFound,
+			wantBody:    []byte("404 page not found\n"),
 		},
 	}
 
@@ -155,11 +198,9 @@ func TestDiscussService(t *testing.T) {
 
 	err = s.Start()
 	defer s.Close()
-
 	assert.Nil(t, err)
 
 	lc, err := s.LocalClient()
-
 	assert.Nil(t, err)
 
 	srv := NewService(lc, l, db, tmpls, "")
@@ -187,6 +228,10 @@ func TestDiscussService(t *testing.T) {
 				srv.DiscussionNew(w, r)
 			case "/topic/save":
 				srv.DiscussionSave(w, r)
+			case "/topic/1":
+				srv.DiscussionTopic(w, r)
+			case "/topic/311":
+				srv.DiscussionTopic(w, r)
 			default:
 				srv.DiscussionIndex(w, r)
 			}

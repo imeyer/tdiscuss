@@ -36,6 +36,7 @@ go_test(
         "testdata/index.html",
         "testdata/error.html",
         "testdata/newtopic.html",
+        "testdata/topic.html",
     ],
     deps = [
         "@com_github_stretchr_testify//assert",
@@ -81,6 +82,7 @@ go_test(
         "testdata/whoami.html",
         "testdata/error.html",
         "testdata/newtopic.html",
+        "testdata/topic.html",
     ],
     deps = [
         "@com_github_stretchr_testify//assert",

@@ -11,6 +11,7 @@ go_library(
         "tmpl/footer.html",
         "tmpl/header.html",
         "tmpl/newtopic.html",
+        "tmpl/topic.html",
     ],
     importpath = "github.com/imeyer/tdiscuss",
     visibility = ["//visibility:private"],

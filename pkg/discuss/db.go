@@ -76,7 +76,7 @@ func (s *SQLiteDB) LoadTopics(ctx context.Context) ([]*Topic, error) {
 func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*Post, error) {
 	var posts []*Post
 
-	s.logger.DebugContext(ctx, "LoadTopic()", "query", fmt.Sprintf("SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = %d ORDER BY CreatedAt DESC", id))
+	s.logger.DebugContext(ctx, "LoadTopic() execute query", "query", fmt.Sprintf("SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = %d ORDER BY CreatedAt DESC", id))
 
 	rows, err := s.db.QueryContext(ctx, "SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = ? ORDER BY CreatedAt DESC", id)
 	if err != nil {
@@ -96,6 +96,11 @@ func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*Post, error) {
 		post.CreatedAt = time.Unix(createdAt, 0).UTC()
 
 		posts = append(posts, post)
+	}
+
+	s.logger.DebugContext(ctx, "LoadTopic() posts returned", "post_count", fmt.Sprintf("%v", len(posts)))
+	if len(posts) == 0 {
+		return nil, ErrNoPostsFoundForTopic
 	}
 
 	return posts, rows.Err()
