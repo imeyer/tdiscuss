@@ -1,7 +1,6 @@
 package discuss
 
 import (
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -79,7 +78,7 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 				LoginName:   "anonymouse@user",
 				DisplayName: "Anonymouse User",
 			},
-			CapMap: map[tailcfg.PeerCapability][]json.RawMessage{},
+			CapMap: map[tailcfg.PeerCapability][]tailcfg.RawMessage{},
 		}
 	} else {
 		user = userInfo
@@ -134,7 +133,7 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 				LoginName:   "anonymouse@user",
 				DisplayName: "Anonymouse User",
 			},
-			CapMap: map[tailcfg.PeerCapability][]json.RawMessage{},
+			CapMap: map[tailcfg.PeerCapability][]tailcfg.RawMessage{},
 		}
 	} else {
 		user = userInfo
