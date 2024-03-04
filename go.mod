@@ -3,7 +3,7 @@ module github.com/imeyer/tdiscuss
 go 1.22.0
 
 require (
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	modernc.org/sqlite v1.25.0
 	tailscale.com v1.60.0
 )
