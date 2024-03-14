@@ -133,12 +133,12 @@ func main() {
 }
 
 func createConfigDir(dir string) error {
-	err := os.MkdirAll(dir, 0700)
+	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return err
 	}
 
-	err = os.MkdirAll(filepath.Join(dir, "tsnet"), 0700)
+	err = os.MkdirAll(filepath.Join(dir, "tsnet"), 0o700)
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger 
 	for {
 		st, err := lc.Status(ctx)
 		if err != nil {
-			return fmt.Errorf("error retrieving tailscale status; retrying: %v", err)
+			return fmt.Errorf("error retrieving tailscale status; retrying: %w", err)
 		} else {
 			switch st.BackendState {
 			case "NoState":
@@ -166,7 +166,7 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger 
 				continue
 			case "Stopped":
 				logger.InfoContext(ctx, "tsnet stopped", "state", st.BackendState)
-				return fmt.Errorf("%v", err)
+				return fmt.Errorf("%w", err)
 			case "Starting":
 				logger.InfoContext(ctx, "starting tsnet", "state", st.BackendState)
 				continue

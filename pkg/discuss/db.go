@@ -127,7 +127,7 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 
 	_, err = s.SavePost(ctx, topic)
 	if err != nil {
-		return 0, fmt.Errorf("post did not save: %v", err)
+		return 0, fmt.Errorf("post did not save: %w", err)
 	}
 
 	return lid, nil

@@ -1,0 +1,19 @@
+# For documentation, see https://golangci-lint.run/usage/configuration/
+run:
+
+linters:
+  enable:
+    - gofumpt
+    - errorlint
+    - unconvert
+    - unparam
+    - bidichk
+    - decorder
+    - errname
+    - execinquery
+    - containedctx
+    - sloglint
+    - tenv
+    - staticcheck
+
+linters-settings:

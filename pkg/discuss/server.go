@@ -91,7 +91,6 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 		User:  user,
 		Title: "New topic!",
 	})
-
 	if err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 		s.RenderError(w, r, err, http.StatusUnsupportedMediaType)
