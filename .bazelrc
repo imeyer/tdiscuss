@@ -1,3 +1,2 @@
 try-import .buildbuddy.bazelrc
-common --enable_bzlmod
 test --test_output=errors
