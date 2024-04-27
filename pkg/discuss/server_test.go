@@ -92,6 +92,14 @@ func TestDiscussService(t *testing.T) {
 			wantStatus:  http.StatusOK,
 		},
 		{
+			name:        "DiscussionIndex to invalid path returns 404",
+			path:        "/failme",
+			method:      http.MethodGet,
+			currentUser: "test2example.com",
+			wantBody:    []byte("404 page not found\n"),
+			wantStatus:  http.StatusNotFound,
+		},
+		{
 			name:        "DiscussionIndex does not allow POST method",
 			path:        "/",
 			method:      http.MethodPost,
