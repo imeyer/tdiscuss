@@ -1,7 +1,13 @@
 {{ template "header" .}}
 
-{{ range .Topics }}
-<p>{{ .Topic }} :: Created on {{ .CreatedAt }} by {{ .User }}</p>
-{{ end}}
+{{ range $index, $row := .Topics }}
+<div class="container">
+    <div class="topic">
+        <div><a href="/topic/{{.ID}}">{{$row.Topic}}</a></div>
+        <div class="date">{{$row.CreatedAt}}</div>
+        <div class="username">{{$row.User}}</div>
+    </div>
+</div>
+{{end}}
 
 {{ template "footer" .}}

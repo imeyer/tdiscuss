@@ -1,6 +1,6 @@
 {
   "lockFileVersion": 6,
-  "moduleFileHash": "4a96fb0dc0c7e121566d260168935102b935e0b39ac93eae15a9ed5744a9f9f9",
+  "moduleFileHash": "ded9c087a2d6cb80d4bd275df7a887ef67f57a7016bd6de39d8d54f98670b55a",
   "flags": {
     "cmdRegistries": [
       "https://bcr.bazel.build/"
@@ -96,17 +96,17 @@
         }
       ],
       "deps": {
-        "rules_go": "rules_go@0.47.0",
+        "rules_go": "rules_go@0.47.1",
         "gazelle": "gazelle@0.36.0",
         "rules_pkg": "rules_pkg@0.10.1",
         "bazel_tools": "bazel_tools@_",
         "local_config_platform": "local_config_platform@_"
       }
     },
-    "rules_go@0.47.0": {
+    "rules_go@0.47.1": {
       "name": "rules_go",
-      "version": "0.47.0",
-      "key": "rules_go@0.47.0",
+      "version": "0.47.1",
+      "key": "rules_go@0.47.1",
       "repoName": "io_bazel_rules_go",
       "executionPlatformsToRegister": [],
       "toolchainsToRegister": [
@@ -116,9 +116,9 @@
         {
           "extensionBzlFile": "@io_bazel_rules_go//go:extensions.bzl",
           "extensionName": "go_sdk",
-          "usingModule": "rules_go@0.47.0",
+          "usingModule": "rules_go@0.47.1",
           "location": {
-            "file": "https://bcr.bazel.build/modules/rules_go/0.47.0/MODULE.bazel",
+            "file": "https://bcr.bazel.build/modules/rules_go/0.47.1/MODULE.bazel",
             "line": 16,
             "column": 23
           },
@@ -136,7 +136,7 @@
               },
               "devDependency": false,
               "location": {
-                "file": "https://bcr.bazel.build/modules/rules_go/0.47.0/MODULE.bazel",
+                "file": "https://bcr.bazel.build/modules/rules_go/0.47.1/MODULE.bazel",
                 "line": 17,
                 "column": 16
               }
@@ -148,9 +148,9 @@
         {
           "extensionBzlFile": "@gazelle//:extensions.bzl",
           "extensionName": "go_deps",
-          "usingModule": "rules_go@0.47.0",
+          "usingModule": "rules_go@0.47.1",
           "location": {
-            "file": "https://bcr.bazel.build/modules/rules_go/0.47.0/MODULE.bazel",
+            "file": "https://bcr.bazel.build/modules/rules_go/0.47.1/MODULE.bazel",
             "line": 32,
             "column": 24
           },
@@ -175,7 +175,7 @@
               },
               "devDependency": false,
               "location": {
-                "file": "https://bcr.bazel.build/modules/rules_go/0.47.0/MODULE.bazel",
+                "file": "https://bcr.bazel.build/modules/rules_go/0.47.1/MODULE.bazel",
                 "line": 33,
                 "column": 18
               }
@@ -200,9 +200,9 @@
         "ruleClassName": "http_archive",
         "attributes": {
           "urls": [
-            "https://github.com/bazelbuild/rules_go/releases/download/v0.47.0/rules_go-v0.47.0.zip"
+            "https://github.com/bazelbuild/rules_go/releases/download/v0.47.1/rules_go-v0.47.1.zip"
           ],
-          "integrity": "sha256-r0fzDpy9cK405Jhm4gGz93Bpq7ERGD8sApfn50umu8A=",
+          "integrity": "sha256-90yY1t9VIXo2hZx0tGDndKvAQQpHzBANgivjTV+ZDxY=",
           "strip_prefix": "",
           "remote_patches": {},
           "remote_patch_strip": 0
@@ -313,7 +313,7 @@
         "bazel_features": "bazel_features@1.9.1",
         "bazel_skylib": "bazel_skylib@1.5.0",
         "com_google_protobuf": "protobuf@21.7",
-        "io_bazel_rules_go": "rules_go@0.47.0",
+        "io_bazel_rules_go": "rules_go@0.47.1",
         "rules_proto": "rules_proto@5.3.0-21.7",
         "bazel_tools": "bazel_tools@_",
         "local_config_platform": "local_config_platform@_"
@@ -1411,7 +1411,7 @@
     },
     "@@bazel_features~//private:extensions.bzl%version_extension": {
       "general": {
-        "bzlTransitiveDigest": "3FcE0iMy2yYKEbEO19f72k9dzcpRUXHH+igow5yVy8g=",
+        "bzlTransitiveDigest": "UwYHXjy4P9iCTMR9n5kWsy4RwLoowjUrfDFTkBo5RG8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -1506,7 +1506,7 @@
     },
     "@@rules_java~//java:extensions.bzl%toolchains": {
       "general": {
-        "bzlTransitiveDigest": "tJHbmWnq7m+9eUBnUdv7jZziQ26FmcGL9C5/hU3Q9UQ=",
+        "bzlTransitiveDigest": "0N5b5J9fUzo0sgvH4F3kIEaeXunz4Wy2/UtSFV/eXUY=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -2011,7 +2011,7 @@
     },
     "@@rules_python~//python/extensions:python.bzl%python": {
       "general": {
-        "bzlTransitiveDigest": "mh86AsACwkNSoqpB2hzQpecNE0j+gb57EL0ZjxD3ZRE=",
+        "bzlTransitiveDigest": "IMdPzfoNLlz06lDUvDoajmn/Uz0yQDmK1+WG+jfMMNE=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},

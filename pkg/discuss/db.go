@@ -73,32 +73,30 @@ func (s *SQLiteDB) LoadTopics(ctx context.Context) ([]*Topic, error) {
 	return topics, rows.Err()
 }
 
-func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*Post, error) {
-	var posts []*Post
-
-	s.logger.DebugContext(ctx, "LoadTopic()", "query", fmt.Sprintf("SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = %d ORDER BY CreatedAt DESC", id))
-
-	rows, err := s.db.QueryContext(ctx, "SELECT User, TopicID, Body, CreatedAt FROM Posts WHERE TopicID = ? ORDER BY CreatedAt DESC", id)
+func (s *SQLiteDB) LoadTopic(ctx context.Context, id int64) ([]*TopicPost, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT p.ID, t.Topic, p.TopicID, p.Body, p.User, p.CreatedAt FROM posts p JOIN topics t ON p.TopicID = t.ID WHERE t.ID = ? ORDER BY p.CreatedAt DESC", id)
 	if err != nil {
 		return nil, err
 	}
 
+	var topicPosts []*TopicPost
+
 	for rows.Next() {
 		var createdAt int64
 
-		post := new(Post)
+		tp := new(TopicPost)
 
-		err := rows.Scan(&post.User, &post.ID, &post.Body, &createdAt)
+		err := rows.Scan(&tp.ID, &tp.Topic, &tp.TopicID, &tp.Body, &tp.User, &createdAt)
 		if err != nil {
 			return nil, err
 		}
 
-		post.CreatedAt = time.Unix(createdAt, 0).UTC()
+		tp.CreatedAt = time.Unix(createdAt, 0).UTC()
 
-		posts = append(posts, post)
+		topicPosts = append(topicPosts, tp)
 	}
 
-	return posts, rows.Err()
+	return topicPosts, err
 }
 
 func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err error) {
@@ -125,7 +123,12 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 
 	s.logger.DebugContext(ctx, "sending topic to SavePost()", "topic_id", topic.ID, "user", topic.User, "ts", topic.CreatedAt)
 
-	_, err = s.SavePost(ctx, topic)
+	_, err = s.SavePost(ctx, &Post{
+		Body:      topic.Body,
+		TopicID:   tid,
+		CreatedAt: time.Unix(time.Now().Unix(), 0),
+		User:      topic.User,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("post did not save: %w", err)
 	}
@@ -133,8 +136,8 @@ func (s *SQLiteDB) SaveTopic(ctx context.Context, topic *Topic) (tid int64, err 
 	return lid, nil
 }
 
-func (s *SQLiteDB) SavePost(ctx context.Context, topic *Topic) (postid int64, err error) {
-	result, err := s.db.ExecContext(ctx, "INSERT INTO posts (TopicID, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", topic.ID, topic.Body, topic.User, topic.CreatedAt.Unix())
+func (s *SQLiteDB) SavePost(ctx context.Context, post *Post) (postid int64, err error) {
+	result, err := s.db.ExecContext(ctx, "INSERT INTO posts (TopicID, Body, User, CreatedAt) VALUES (?, ?, ?, ?)", post.TopicID, post.Body, post.User, post.CreatedAt.Unix())
 	if err != nil {
 		s.logger.ErrorContext(ctx, err.Error())
 		return 0, err

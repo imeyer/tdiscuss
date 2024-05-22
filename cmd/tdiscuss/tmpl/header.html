@@ -4,6 +4,68 @@
 
 <head>
     <title>{{ .Title }}</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+            background-color: #f9f9f9;
+        }
+
+        .topic {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .container:nth-child(odd) {
+            background-color: #f0f0f0;
+        }
+
+        .container:nth-child(even) {
+            background-color: #e0e0e0;
+        }
+
+        .date {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .username {
+            color: #333;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .body {
+            padding: 15px;
+            line-height: 1.6;
+            color: #444;
+        }
+    </style>
 </head>
 
 <body>

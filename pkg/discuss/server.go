@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +43,6 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 	}
 
 	s.logger.InfoContext(r.Context(), "index fetch", "route", r.URL.Path, "rows", len(topics))
-	s.logger.DebugContext(r.Context(), "TEMPLATE/index.html")
 	if err := s.tmpls.ExecuteTemplate(w, "index.html", struct {
 		Title  string
 		Topics []*Topic
@@ -51,6 +52,7 @@ func (s *DiscussService) DiscussionIndex(w http.ResponseWriter, r *http.Request)
 	}); err != nil {
 		return
 	}
+
 }
 
 func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
@@ -74,7 +76,7 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 		user = &apitype.WhoIsResponse{
 			Node: &tailcfg.Node{},
 			UserProfile: &tailcfg.UserProfile{
-				ID:          0,
+				ID:          -1,
 				LoginName:   "anonymouse@user",
 				DisplayName: "Anonymouse User",
 			},
@@ -99,13 +101,33 @@ func (s *DiscussService) DiscussionNew(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *DiscussService) DiscussionTopic(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.URL.Path, "/topic/") {
+	topicID, err := ParseID(r.URL.Path)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
 	if r.Method != http.MethodGet {
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
+		return
+	}
+
+	tp, err := s.db.LoadTopic(r.Context(), topicID)
+	if err != nil {
+		s.RenderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	err = s.tmpls.ExecuteTemplate(w, "topic.html", struct {
+		Title string
+		Posts []*TopicPost
+	}{
+		Title: t
+		Posts: tp,
+	})
+	if err != nil {
+		s.logger.DebugContext(r.Context(), err.Error())
+		s.RenderError(w, r, err, http.StatusUnsupportedMediaType)
 		return
 	}
 }
@@ -168,10 +190,10 @@ func (s *DiscussService) DiscussionSave(w http.ResponseWriter, r *http.Request) 
 	}
 
 	topic := new(Topic)
-	topic.Topic = r.Form.Get("topic")
-	topic.Body = r.Form.Get("topic_body")
+	topic.Topic = template.HTMLEscapeString(r.Form.Get("topic"))
+	topic.Body = template.HTMLEscapeString(r.Form.Get("topic_body"))
 	topic.CreatedAt = time.Now()
-	topic.User = user.UserProfile.LoginName
+	topic.User = template.HTMLEscapeString(user.UserProfile.LoginName)
 
 	topicID, err := s.db.SaveTopic(r.Context(), topic)
 	if err != nil {
@@ -198,7 +220,11 @@ func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err
 	s.logger.DebugContext(r.Context(), "error response written", "bytes", written)
 }
 
-func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *SQLiteDB, tmpls *template.Template, httpsURL string) *DiscussService {
+func NewService(tailClient *tailscale.LocalClient,
+	logger *slog.Logger,
+	db *SQLiteDB,
+	tmpls *template.Template,
+	httpsURL string) *DiscussService {
 	return &DiscussService{
 		tailClient: tailClient,
 		db:         db,
@@ -206,4 +232,20 @@ func NewService(tailClient *tailscale.LocalClient, logger *slog.Logger, db *SQLi
 		tmpls:      tmpls,
 		httpsURL:   httpsURL,
 	}
+}
+
+func ParseID(path string) (int64, error) {
+	re := regexp.MustCompile(`^/topic/([0-9]+)$`)
+	matches := re.FindStringSubmatch(path)
+
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("URL does not match the expected pattern")
+	}
+
+	id, err := strconv.ParseInt(matches[1], 0, 64)
+	if err != nil {
+		return 0, fmt.Errorf("error converting ID to integer: %v", err)
+	}
+
+	return id, nil
 }
