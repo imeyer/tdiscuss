@@ -1,0 +1,12 @@
+{{ template "header" .}}
+
+<form action="/thread/new" method="POST">
+    <label for="thread">thread:</label><br />
+    <input type="text" id="thread" name="thread"><br />
+
+    <label for="thread_body">Body:</label><br>
+    <textarea rows="10" cols="25" name="thread_body"></textarea><br />
+    <button type="submit" onclick="">Post it!</button>
+</form>
+
+{{ template "footer" .}}

@@ -1,3 +1,4 @@
 load("@gazelle//:def.bzl", "gazelle")
 
+# gazelle:prefix github.com/imeyer/tdiscuss
 gazelle(name = "gazelle")

@@ -18,7 +18,6 @@ go_library(
         "@com_tailscale//client/tailscale",
         "@com_tailscale//client/tailscale/apitype",
         "@com_tailscale//tailcfg",
-        "@org_modernc_sqlite//:sqlite",
     ],
 )
 
@@ -35,10 +34,9 @@ go_test(
         "testdata/whoami.html",
         "testdata/index.html",
         "testdata/error.html",
-        "testdata/newtopic.html",
+        "testdata/newthread.html",
     ],
     deps = [
-        "@com_github_stretchr_testify//assert",
         "@com_tailscale//tsnet",
         "@com_tailscale//tstest/integration",
         "@com_tailscale//tstest/integration/testcontrol",
@@ -49,44 +47,21 @@ go_test(
 go_library(
     name = "tdiscuss",
     srcs = [
+        "config.go",
         "db.go",
+        "member.go",
+        "models.go",
+        "queries.sql.go",
         "server.go",
-        "types.go",
-    ],
-    embedsrcs = [
-        "schema/topics.sql",
-        "schema/posts.sql",
+        "thread.go",
     ],
     importpath = "github.com/imeyer/tdiscuss",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
         "@com_tailscale//client/tailscale",
-        "@com_tailscale//client/tailscale/apitype",
-        "@com_tailscale//tailcfg",
-        "@org_modernc_sqlite//:sqlite",
-    ],
-)
-
-go_test(
-    name = "tdiscuss_test",
-    size = "small",  # keep
-    srcs = [
-        "db_test.go",
-        "server_test.go",
-    ],
-    data = glob(["testdata/**"]),
-    embed = [":tdiscuss"],
-    embedsrcs = [
-        "testdata/index.html",
-        "testdata/whoami.html",
-        "testdata/error.html",
-        "testdata/newtopic.html",
-    ],
-    deps = [
-        "@com_github_stretchr_testify//assert",
-        "@com_tailscale//tsnet",
-        "@com_tailscale//tstest/integration",
-        "@com_tailscale//tstest/integration/testcontrol",
-        "@com_tailscale//types/logger",
     ],
 )

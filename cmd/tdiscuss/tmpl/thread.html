@@ -1,0 +1,26 @@
+{{ template "header" .}}
+<h1>{{ .Title }}</h1>
+<h2>{{ .TPD.Subject }}</h2>
+
+{{ range .TPD.ThreadPosts }}
+<div class="container">
+    <div class="header">
+        <div class="date">{{ .DatePosted.Time | formatTimestamp }}</div>
+        <div class="username">{{ .Email.String }}</div>
+    </div>
+    <div class="body">
+        {{ .Body.String }}
+    </div>
+</div>
+{{ end }}
+<p>
+<div class="container">
+    <form action="/thread/{{ .TPD.ID }}" method="POST">
+        <label for="thread_body">Body:</label><br>
+        <textarea rows="10" cols="25" name="thread_body"></textarea><br />
+        <button type="submit" onclick="">Post it!</button>
+    </form>
+</div>
+</p>
+
+{{ template "footer" .}}

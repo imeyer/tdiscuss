@@ -1,13 +1,16 @@
-{{ template "header" .}}
+{{ template "header" . }}
 
-{{ range $index, $row := .Topics }}
+<h1>Top serious throwback...</h1>
+{{ range .Threads }}
 <div class="container">
-    <div class="topic">
-        <div><a href="/topic/{{.ID}}">{{$row.Topic}}</a></div>
-        <div class="date">{{$row.CreatedAt}}</div>
-        <div class="username">{{$row.User}}</div>
+    <div class="thread">
+        <div><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></div>
+        <div class="date">{{ .DateLastPosted.Time | formatTimestamp }}</div>
+        <div class="username">{{ .Email.String }}</div>
     </div>
 </div>
+{{else}}
+<p>Nothing to see here... <a href="/thread/new">say something?</a></p>
 {{end}}
 
-{{ template "footer" .}}
+{{ template "footer" . }}

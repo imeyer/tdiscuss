@@ -15,6 +15,8 @@ import (
 
 	"github.com/imeyer/tdiscuss/pkg/discuss"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"tailscale.com/client/tailscale"
 	"tailscale.com/hostinfo"
 	"tailscale.com/tsnet"
@@ -26,7 +28,7 @@ var templateFiles embed.FS
 var (
 	hostname        = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
 	dataDir         = flag.String("data-location", dataLocation(), "Configuration data location.")
-	debug           = flag.Bool("debug", false, "Enable debug logging")
+	debug           = flag.Bool("debug", true, "Enable debug logging")
 	tsnetLogVerbose = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
 )
 
@@ -88,26 +90,35 @@ func main() {
 	}
 
 	// Open DB connection
-	db, err := discuss.NewSQLiteDB(fmt.Sprintf("%s/%s", *dataDir, "discuss.db"), logger)
+	dbconn, err := pgxpool.NewWithConfig(context.Background(), discuss.PoolConfig(os.Getenv("DATABASE_URL"), logger))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
+	defer dbconn.Close()
 
-	tmpls := template.Must(template.ParseFS(templateFiles, "tmpl/*.html"))
+	queries := discuss.New(dbconn)
+
+	// tmpls := template.Must(template.ParseFS(templateFiles, "tmpl/*.html"))
+
+	tmpls := template.Must(template.New("any").Funcs(template.FuncMap{
+		"formatTimestamp": formatTimestamp,
+	}).ParseFS(templateFiles, "tmpl/*html"))
 
 	dsvc := discuss.NewService(
 		lc,
 		logger,
-		db,
+		dbconn,
+		queries,
 		tmpls,
 		httpsURL,
 	)
 
 	tailnetMux := http.NewServeMux()
-	tailnetMux.HandleFunc("/", dsvc.DiscussionIndex)
-	tailnetMux.HandleFunc("/topic/new", dsvc.DiscussionNew)
-	tailnetMux.HandleFunc("/topic/save", dsvc.DiscussionSave)
-	tailnetMux.HandleFunc("/topic/{id}", dsvc.DiscussionTopic)
+	tailnetMux.HandleFunc("/", dsvc.ThreadIndex)
+	tailnetMux.HandleFunc("GET /thread/new", dsvc.DiscussionNew)
+	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
+	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreads)
+	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
 
 	// Non-TLS listener
 	ln, err := s.Listen("tcp", ":80")
@@ -208,4 +219,8 @@ func envOr(key, defaultVal string) string {
 		return result
 	}
 	return defaultVal
+}
+
+func formatTimestamp(t time.Time) string {
+	return t.Format("2006-01-02 15:04:05")
 }
