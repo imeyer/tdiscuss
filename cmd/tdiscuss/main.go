@@ -47,7 +47,14 @@ func main() {
 
 	logger := newLogger(&lvl)
 
-	err := createConfigDir(*dataDir)
+	// Open DB connection
+	dbconn, err := pgxpool.NewWithConfig(context.Background(), discuss.PoolConfig(os.Getenv("DATABASE_URL"), logger))
+	if err != nil {
+		log.Fatalf("Unable to connect to database: %v\n", err)
+	}
+	defer dbconn.Close()
+
+	err = createConfigDir(*dataDir)
 	if err != nil {
 		logger.Info(fmt.Sprintf("creating configuration directory (%s) failed: %v", *dataDir, err), "data-dir", *dataDir)
 	}
@@ -67,38 +74,18 @@ func main() {
 	}
 	defer s.Close()
 
-	lc, err := s.LocalClient()
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
+	lc, _ := s.LocalClient()
 
 	err = checkTailscaleReady(ctx, lc, logger)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	tsnetstatus, err := lc.StatusWithoutPeers(ctx)
-	if err != nil {
-		logger.InfoContext(ctx, fmt.Sprintf("%v", err))
-		log.Fatalf("HTTPS is not enabled in the admin panel: %v", err)
+	n, ok := lc.ExpandSNIName(ctx, *hostname)
+	if !ok {
+		log.Fatalf("no hostname for https")
 	}
-
-	httpsURL := tsnetstatus.CertDomains[0]
-
-	if httpsURL == "" {
-		log.Fatal("No HTTPS domain returned")
-	}
-
-	// Open DB connection
-	dbconn, err := pgxpool.NewWithConfig(context.Background(), discuss.PoolConfig(os.Getenv("DATABASE_URL"), logger))
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
-	}
-	defer dbconn.Close()
-
 	queries := discuss.New(dbconn)
-
-	// tmpls := template.Must(template.ParseFS(templateFiles, "tmpl/*.html"))
 
 	tmpls := template.Must(template.New("any").Funcs(template.FuncMap{
 		"formatTimestamp": formatTimestamp,
@@ -110,7 +97,7 @@ func main() {
 		dbconn,
 		queries,
 		tmpls,
-		httpsURL,
+		n,
 	)
 
 	tailnetMux := http.NewServeMux()
@@ -138,7 +125,7 @@ func main() {
 	}
 	defer tln.Close()
 
-	logger.InfoContext(ctx, fmt.Sprintf("listening on https://%s", httpsURL))
+	logger.InfoContext(ctx, fmt.Sprintf("listening on https://%s", n))
 
 	log.Fatal(http.Serve(tln, tailnetMux))
 }
@@ -165,7 +152,7 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger 
 		} else {
 			switch st.BackendState {
 			case "NoState":
-				logger.InfoContext(ctx, fmt.Sprintf("%v", st), "state", st.BackendState)
+				logger.DebugContext(ctx, fmt.Sprintf("%v", st), "state", st.BackendState)
 				time.Sleep(2 * time.Second)
 				continue
 			case "NeedsLogin":

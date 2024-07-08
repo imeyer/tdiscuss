@@ -1,12 +1,29 @@
 {{ template "header" .}}
 
-<form action="/thread/new" method="POST">
-    <label for="thread">thread:</label><br />
-    <input type="text" id="thread" name="thread"><br />
+<h2>Top serious throwback...</h2>
 
-    <label for="thread_body">Body:</label><br>
-    <textarea rows="10" cols="25" name="thread_body"></textarea><br />
-    <button type="submit" onclick="">Post it!</button>
+<form action="/thread/new" method="POST">
+    <table class="table-max-w">
+        <tbody>
+            <tr>
+                <td>
+                    <label for="subject">subject:</label>
+                </td>
+                <td class="wide">
+                    <input type="text" id="thread" name="subject"><br />
+                </td>
+            </tr>
+            <tr>
+                <td>
+                    <label for="thread_body">body:</label>
+                </td>
+                <td class="wide">
+                    <textarea rows="15" cols="24" name="thread_body"></textarea><br />
+                    <button type="submit" onclick="">Post it!</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 </form>
 
 {{ template "footer" .}}

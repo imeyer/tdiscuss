@@ -21,7 +21,7 @@ func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
 
 	dbConfig, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		log.Fatal("Failed to create a config, error: ", err)
+		log.Fatal(err.Error())
 	}
 
 	dbConfig.MaxConns = defaultMaxConns

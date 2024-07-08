@@ -1,51 +1,7 @@
-# gazelle:prefix github.com/imeyer/tdiscuss
-load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_go//go:def.bzl", "go_library")
 
 go_library(
     name = "discuss",
-    srcs = [
-        "db.go",
-        "server.go",
-        "types.go",
-    ],
-    embedsrcs = [
-        "schema/posts.sql",
-        "schema/topics.sql",
-    ],
-    importpath = "github.com/imeyer/tdiscuss/pkg/discuss",
-    visibility = ["//visibility:public"],
-    deps = [
-        "@com_tailscale//client/tailscale",
-        "@com_tailscale//client/tailscale/apitype",
-        "@com_tailscale//tailcfg",
-    ],
-)
-
-go_test(
-    name = "discuss_test",
-    size = "small",  # keep
-    srcs = [
-        "db_test.go",
-        "server_test.go",
-    ],
-    data = glob(["testdata/**"]),
-    embed = [":discuss"],
-    embedsrcs = [
-        "testdata/whoami.html",
-        "testdata/index.html",
-        "testdata/error.html",
-        "testdata/newthread.html",
-    ],
-    deps = [
-        "@com_tailscale//tsnet",
-        "@com_tailscale//tstest/integration",
-        "@com_tailscale//tstest/integration/testcontrol",
-        "@com_tailscale//types/logger",
-    ],
-)
-
-go_library(
-    name = "tdiscuss",
     srcs = [
         "config.go",
         "db.go",
@@ -55,7 +11,7 @@ go_library(
         "server.go",
         "thread.go",
     ],
-    importpath = "github.com/imeyer/tdiscuss",
+    importpath = "github.com/imeyer/tdiscuss/pkg/discuss",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_jackc_pgx_v5//:pgx",

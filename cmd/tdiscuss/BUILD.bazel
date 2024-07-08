@@ -6,7 +6,6 @@ go_library(
     srcs = ["main.go"],
     embedsrcs = [
         "tmpl/index.html",
-        "tmpl/whoami.html",
         "tmpl/error.html",
         "tmpl/footer.html",
         "tmpl/header.html",

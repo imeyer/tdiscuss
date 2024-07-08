@@ -2,25 +2,36 @@
 <h1>{{ .Title }}</h1>
 <h2>{{ .TPD.Subject }}</h2>
 
-{{ range .TPD.ThreadPosts }}
-<div class="container">
-    <div class="header">
-        <div class="date">{{ .DatePosted.Time | formatTimestamp }}</div>
-        <div class="username">{{ .Email.String }}</div>
-    </div>
-    <div class="body">
-        {{ .Body.String }}
-    </div>
-</div>
-{{ end }}
+<table>
+    <tbody>
+        {{ range .TPD.ThreadPosts }}
+        <tr>
+            <td>On {{ .DatePosted.Time | formatTimestamp}}, {{ .Email.String }} posted</td>
+        </tr>
+        <tr>
+            <td>{{ .Body.String }}</td>
+        </tr>
+        {{ else }}
+        <tr>
+            <td>Nothing here?</td>
+        </tr>
+        {{ end}}
+    </tbody>
+</table>
 <p>
-<div class="container">
-    <form action="/thread/{{ .TPD.ID }}" method="POST">
-        <label for="thread_body">Body:</label><br>
-        <textarea rows="10" cols="25" name="thread_body"></textarea><br />
-        <button type="submit" onclick="">Post it!</button>
-    </form>
-</div>
+<form action="/thread/{{ .TPD.ID }}" method="POST">
+    <table>
+        <tbody>
+            <tr>
+                <td>
+                    <label for="thread_body">Body:</label><br>
+                    <textarea rows="10" cols="25" name="thread_body"></textarea><br />
+                    <button type="submit" onclick="">Post it!</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</form>
 </p>
 
 {{ template "footer" .}}

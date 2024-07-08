@@ -9,59 +9,97 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #f5f5f5;
+            font-size: 13;
+            background-color: #dfdfdf;
             margin: 0;
             padding: 20px;
         }
 
-        .container {
-            max-width: 920px;
-            margin: 0 auto;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        table {
+            width: 100%;
+            table-layout: fixed;
+            margin-left: auto;
+            margin-right: auto;
+            --border: 1px solid grey;
+            border-radius: 10px;
+
+            /* Don't change these properties */
+            border-spacing: 0;
+            border-collapse: separate;
+            border: var(--border);
             overflow: hidden;
         }
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid #e0e0e0;
-            background-color: #f9f9f9;
+        /* table th:not(:last-child),
+        table td:not(:last-child) {
+            border-right: var(--border);
+        } */
+
+        table>thead>tr:not(:last-child)>th,
+        table>thead>tr:not(:last-child)>td,
+        table>tbody>tr:not(:last-child)>th,
+        table>tbody>tr:not(:last-child)>td,
+        table>tr:not(:last-child)>td,
+        table>tr:not(:last-child)>th,
+        table>thead:not(:last-child),
+        table>tbody:not(:last-child),
+        table>tfoot:not(:last-child) {
+            border-bottom: var(--border);
         }
 
-        .thread {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 16px;
-            border-bottom: 1px solid #e0e0e0;
+        .table-max-w {
+            max-width: 1000px;
         }
 
-        .container:nth-child(odd) {
-            background-color: #f0f0f0;
+        tbody>tr:nth-child(even) {
+            background-color: #CCC
         }
 
-        .container:nth-child(even) {
-            background-color: #e0e0e0;
+        tbody>tr:nth-child(odd) {
+            background-color: #DDD
         }
 
-        .date {
-            color: #888;
-            font-size: 14px;
+        th,
+        td {
+            padding: 3px;
+            vertical-align: top;
+
+            &:first-child {
+                position: sticky;
+                left: 0;
+                z-index: 1;
+            }
         }
 
-        .username {
-            color: #333;
-            font-size: 16px;
-            font-weight: bold;
+        th {
+            background-color: #efefef;
+            text-align: left;
+            font-weight: 600;
         }
 
-        .body {
-            padding: 15px;
-            line-height: 1.6;
-            color: #444;
+        .wide {
+            width: 80%;
+        }
+
+        .col-subject {
+            width: max(200px, calc(100vw - 680px));
+        }
+
+        .table-max-w .col-200 {
+            width: max(200px, min(520px, calc(100vw - 680px)));
+            width: clamp(200px, calc(100vw - 680px), 520px)
+        }
+
+        .col-user {
+            width: 220px;
+        }
+
+        .col-date {
+            width: 170px;
+        }
+
+        .col-posts {
+            width: 80px;
         }
     </style>
 </head>

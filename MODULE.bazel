@@ -9,7 +9,6 @@ bazel_dep(name = "gazelle", version = "0.37.0", repo_name = "gazelle")
 bazel_dep(name = "rules_pkg", version = "0.10.1")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-
 go_sdk.host()
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")

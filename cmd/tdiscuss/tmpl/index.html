@@ -1,16 +1,35 @@
 {{ template "header" . }}
 
-<h1>Top serious throwback...</h1>
-{{ range .Threads }}
-<div class="container">
-    <div class="thread">
-        <div><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></div>
-        <div class="date">{{ .DateLastPosted.Time | formatTimestamp }}</div>
-        <div class="username">{{ .Email.String }}</div>
-    </div>
-</div>
+<h2>Top serious throwback... <a href="/thread/new">say something?</a></h2>
+{{ if .Threads }}
+<table class="table-max-w">
+    <colgroup>
+        <col class="col-user" />
+        <col class="col-subject" />
+        <col class="col-posts" />
+        <col class="col-date" />
+    </colgroup>
+    <thead>
+        <tr>
+            <th>user</th>
+            <th>subject</th>
+            <th>posts</th>
+            <th>date</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range .Threads }}
+        <tr>
+            <td>{{ .Email.String }}</td>
+            <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
+            <td>{{ .Posts.Int32 }}</td>
+            <td>{{ .DateLastPosted.Time | formatTimestamp }}</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
 {{else}}
-<p>Nothing to see here... <a href="/thread/new">say something?</a></p>
+<p>Nothing to see here... <a href="/thread/new">say something!!!</a></p>
 {{end}}
 
 {{ template "footer" . }}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
-	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -166,23 +166,14 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
-		err := r.ParseMultipartForm(formDataLimit)
-		if err != nil {
-			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", "ip", r.RemoteAddr, "content-type", r.Header.Get("Content-Type"))
-		}
-	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
-		err := r.ParseForm()
-		if err != nil {
-			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", "ip", r.RemoteAddr, "content-type", r.Header.Get("Content-Type"))
-		}
-	} else {
-		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: unknown content type: %s", r.RemoteAddr, r.Header.Get("Content-Type")))
+	err := r.ParseForm()
+	if err != nil {
+		s.logger.DebugContext(r.Context(), "unknown content type", slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
 
-	if !r.Form.Has("thread") && !r.Form.Has("thread_body") {
+	if !r.Form.Has("subject") && !r.Form.Has("thread_body") {
 		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: thread, and thread_body are required", r.RemoteAddr))
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
@@ -211,7 +202,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	qtx1 := s.queries.WithTx(threadTx)
 	err = qtx1.CreateThread(context.Background(), CreateThreadParams{
-		Subject:      template.HTMLEscapeString(r.Form.Get("thread")),
+		Subject:      template.HTMLEscapeString(r.Form.Get("subject")),
 		MemberID:     memberId,
 		LastMemberID: memberId,
 	})
@@ -266,18 +257,9 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
-		err := r.ParseMultipartForm(formDataLimit)
-		if err != nil {
-			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", r.RemoteAddr, r.Header.Get("Content-Type"))
-		}
-	} else if r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
-		err := r.ParseForm()
-		if err != nil {
-			s.logger.DebugContext(r.Context(), "cannot parse multipart/form-data", r.RemoteAddr, r.Header.Get("Content-Type"))
-		}
-	} else {
-		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: unknown content type: %s", r.RemoteAddr, r.Header.Get("Content-Type")))
+	err = r.ParseForm()
+	if err != nil {
+		s.logger.DebugContext(r.Context(), "unknown content type", slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
@@ -329,7 +311,7 @@ func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err
 	if err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 	}
-	s.logger.DebugContext(r.Context(), "error response written", "bytes", written)
+	s.logger.DebugContext(r.Context(), "error response written", slog.String("bytes", string(written)))
 }
 
 func ParseThreadID(path string) (int64, error) {
