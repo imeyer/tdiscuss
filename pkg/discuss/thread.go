@@ -324,7 +324,7 @@ func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err
 	if err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 	}
-	s.logger.DebugContext(r.Context(), "error response written", slog.String("bytes", string(written)))
+	s.logger.DebugContext(r.Context(), "error response written", slog.String("bytes", fmt.Sprint(written)))
 }
 
 func ParseThreadID(path string) (int64, error) {
