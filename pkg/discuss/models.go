@@ -18,36 +18,19 @@ type BoardDatum struct {
 
 type Chat struct {
 	ID       int32
-	MemberID int32
+	MemberID int64
 	Stamp    pgtype.Timestamp
 	Chat     pgtype.Text
 }
 
-type Donation struct {
-	ID            int32
-	FundraiserID  int32
-	PaymentDate   pgtype.Date
-	PaymentStatus pgtype.Text
-	PayerEmail    pgtype.Text
-	TxnID         pgtype.Text
-	PaymentFee    pgtype.Numeric
-	PaymentGross  pgtype.Numeric
-}
-
 type Favorite struct {
 	ID       int32
-	MemberID int32
-	ThreadID int32
-}
-
-type Fundraiser struct {
-	ID   int32
-	Name pgtype.Text
-	Goal pgtype.Numeric
+	MemberID int64
+	ThreadID int64
 }
 
 type Member struct {
-	ID               int32
+	ID               int64
 	DateJoined       pgtype.Timestamptz
 	DateFirstPost    pgtype.Date
 	Email            string
@@ -64,48 +47,48 @@ type Member struct {
 }
 
 type MemberIgnore struct {
-	MemberID       pgtype.Int4
-	IgnoreMemberID pgtype.Int4
+	MemberID       pgtype.Int8
+	IgnoreMemberID pgtype.Int8
 }
 
 type MemberLurkUnlock struct {
 	ID        int32
-	MemberID  int32
+	MemberID  int64
 	CreatedAt pgtype.Date
 }
 
 type MemberPref struct {
 	ID       int32
 	PrefID   int32
-	MemberID int32
+	MemberID int64
 	Value    string
 }
 
 type Message struct {
-	ID             int32
-	MemberID       int32
+	ID             int64
+	MemberID       int64
 	Subject        string
 	FirstPostID    pgtype.Int4
 	DatePosted     pgtype.Timestamp
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
-	LastMemberID   int32
+	LastMemberID   int64
 	DateLastPosted pgtype.Timestamp
 }
 
 type MessageMember struct {
-	MemberID      int32
-	MessageID     int32
+	MemberID      int64
+	MessageID     int64
 	DatePosted    pgtype.Timestamp
 	LastViewPosts int32
 	Deleted       bool
 }
 
 type MessagePost struct {
-	ID         int32
+	ID         int64
 	MessageID  int32
 	DatePosted pgtype.Timestamp
-	MemberID   int32
+	MemberID   int64
 	MemberIp   netip.Prefix
 	Body       pgtype.Text
 }
@@ -127,16 +110,9 @@ type PrefType struct {
 	Name string
 }
 
-type Theme struct {
-	ID    int32
-	Name  string
-	Value pgtype.Text
-	Main  bool
-}
-
 type Thread struct {
-	ID             int32
-	MemberID       int32
+	ID             int64
+	MemberID       int64
 	Subject        string
 	DatePosted     pgtype.Timestamptz
 	FirstPostID    pgtype.Int4
@@ -144,7 +120,7 @@ type Thread struct {
 	Views          pgtype.Int4
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
-	LastMemberID   int32
+	LastMemberID   int64
 	DateLastPosted pgtype.Timestamptz
 	Indexed        bool
 	Edited         bool
@@ -153,8 +129,8 @@ type Thread struct {
 }
 
 type ThreadMember struct {
-	MemberID      int32
-	ThreadID      int32
+	MemberID      int64
+	ThreadID      int64
 	Undot         bool
 	Ignore        bool
 	DatePosted    pgtype.Timestamp
@@ -162,10 +138,10 @@ type ThreadMember struct {
 }
 
 type ThreadPost struct {
-	ID         int32
-	ThreadID   int32
+	ID         int64
+	ThreadID   int64
 	DatePosted pgtype.Timestamptz
-	MemberID   int32
+	MemberID   int64
 	Indexed    bool
 	Edited     bool
 	Deleted    bool

@@ -8,7 +8,7 @@ CREATE TABLE board_data
 
 CREATE TABLE member
 (
-  id                   serial PRIMARY KEY,
+  id                   bigserial UNIQUE PRIMARY KEY,
   date_joined          timestamptz DEFAULT now(),                    -- date of signup
   date_first_post       date,                                       -- the date of the member's first post
   email                varchar NOT NULL CHECK(email <> ''),    -- email used to sign up
@@ -26,14 +26,14 @@ CREATE TABLE member
 
 CREATE TABLE member_ignore
 (
-  member_id         int,
-  ignore_member_id  int
+  member_id         bigint,
+  ignore_member_id  bigint
 );
 
 CREATE TABLE member_lurk_unlock
 (
   id           serial PRIMARY KEY,
-  member_id    int NOT NULL REFERENCES member(id),
+  member_id    bigint NOT NULL REFERENCES member(id),
   created_at   date NOT NULL DEFAULT now()
 );
 
@@ -65,14 +65,14 @@ CREATE TABLE member_pref
 (
   id             serial PRIMARY KEY,
   pref_id        int NOT NULL,
-  member_id      int NOT NULL,
+  member_id      bigint NOT NULL,
   value          text NOT NULL CHECK(value <> '')
 );
 
 CREATE TABLE thread
 (
-  id                 serial PRIMARY KEY,
-  member_id          int NOT NULL,                               -- id of member who created thread
+  id                 bigserial UNIQUE PRIMARY KEY,
+  member_id          bigint NOT NULL,                               -- id of member who created thread
   subject            text NOT NULL CHECK(subject <> ''), -- subject of thread
   date_posted        timestamptz not NULL DEFAULT now(),           -- date thread was created
   first_post_id       int,                                        -- first post id
@@ -80,7 +80,7 @@ CREATE TABLE thread
   views              int DEFAULT 0,                              -- total views to thread
   sticky             bool DEFAULT false,                         -- thread sticky flag
   locked             bool DEFAULT false,                         -- thread locked flag
-  last_member_id     int NOT NULL,                               -- last member who posted to thread
+  last_member_id     bigint NOT NULL,                               -- last member who posted to thread
   date_last_posted   timestamptz NOT NULL DEFAULT now(),           -- time last post was entered
   indexed            bool NOT NULL DEFAULT false,                -- has been indexed: for search indexer
   edited             bool NOT NULL DEFAULT false,                -- has been edited: for search indexer
@@ -90,10 +90,10 @@ CREATE TABLE thread
 
 CREATE TABLE thread_post
 (
-  id            serial PRIMARY KEY,
-  thread_id     int NOT NULL,                  -- thread post belongs to
+  id            bigserial UNIQUE PRIMARY KEY,
+  thread_id     bigint NOT NULL,                  -- thread post belongs to
   date_posted   timestamptz DEFAULT now(),       -- time this post was created
-  member_id     int NOT NULL,                  -- id of member who created post
+  member_id     bigint NOT NULL,                  -- id of member who created post
   indexed       bool NOT NULL DEFAULT false,   -- has been indexed by search indexer
   edited        bool NOT NULL DEFAULT false,   -- has been edited: for search indexer
   deleted       bool NOT NULL DEFAULT false,   -- flagged for deletion: for search indexer
@@ -102,8 +102,8 @@ CREATE TABLE thread_post
 
 CREATE TABLE thread_member
 (
-  member_id	        int NOT NULL,
-  thread_id	        int NOT NULL,
+  member_id	            bigint NOT NULL,
+  thread_id	            bigint NOT NULL,
   undot                 bool NOT NULL DEFAULT false,
   ignore                bool NOT NULL DEFAULT false,
   date_posted           timestamp,
@@ -113,31 +113,31 @@ CREATE TABLE thread_member
 
 CREATE TABLE message
 (
-  id                 serial PRIMARY KEY,
-  member_id          int NOT NULL,                               -- id of member who created message
+  id                 bigserial UNIQUE PRIMARY KEY,
+  member_id          bigint NOT NULL,                               -- id of member who created message
   subject            varchar(200) NOT NULL CHECK(subject <> ''), -- subject of message
   first_post_id      int,                                        -- first post id for message
   date_posted        timestamp NOT NULL DEFAULT now(),           -- date message was created
   posts              int DEFAULT 0,                              -- total posts in a message
   views              int DEFAULT 0,                              -- total views to message
-  last_member_id     int NOT NULL,                               -- last member to reply
+  last_member_id     bigint NOT NULL,                               -- last member to reply
   date_last_posted   timestamp NOT NULL DEFAULT now()
 );
 
 CREATE TABLE message_post
 (
-  id            serial PRIMARY KEY,
+  id            bigserial UNIQUE PRIMARY KEY,
   message_id    int NOT NULL,            -- message post belongs to
   date_posted   timestamp DEFAULT now(), -- time message post was created
-  member_id     int NOT NULL,            -- id of member who created message post
+  member_id     bigint NOT NULL,            -- id of member who created message post
   member_ip     cidr NOT NULL,           -- current ip address of member who created message post
   body          text                     -- body text of message post
 );
 
 CREATE TABLE message_member
 (
-  member_id	        int NOT NULL,
-  message_id	      int NOT NULL,
+  member_id	        bigint NOT NULL,
+  message_id	      bigint NOT NULL,
   date_posted       timestamp,
   last_view_posts   int NOT NULL DEFAULT 0,
   deleted           bool NOT NULL DEFAULT false
@@ -146,14 +146,14 @@ CREATE TABLE message_member
 CREATE TABLE favorite
 (
   id          serial PRIMARY KEY,
-  member_id   int NOT NULL,       -- member who this watched thread belongs to
-  thread_id   int NOT NULL        -- thread member is watching
+  member_id   bigint NOT NULL,       -- member who this watched thread belongs to
+  thread_id   bigint NOT NULL        -- thread member is watching
 );
 
 CREATE TABLE chat
 (
   id         serial PRIMARY KEY,
-  member_id  int NOT NULL,
+  member_id  bigint NOT NULL,
   stamp      timestamp DEFAULT now(),
   chat       text
 );

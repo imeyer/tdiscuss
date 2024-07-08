@@ -102,12 +102,15 @@ func main() {
 	)
 
 	tailnetMux := http.NewServeMux()
-	tailnetMux.HandleFunc("GET /", dsvc.ThreadIndex)
-	tailnetMux.HandleFunc("GET /thread/new", dsvc.DiscussionNew)
+	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
+	tailnetMux.HandleFunc("GET /thread/new", dsvc.ThreadNew)
 	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
-	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreads)
+	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
 	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
 	tailnetMux.Handle("GET /metrics", promhttp.Handler())
+
+	// Instrument all the routes!
+	mux := discuss.HistogramHttpHandler(tailnetMux)
 
 	// Non-TLS listener
 	ln, err := s.Listen("tcp", ":80")
@@ -118,7 +121,7 @@ func main() {
 
 	logger.InfoContext(ctx, fmt.Sprintf("listening on http://%s", *hostname))
 
-	go func() { log.Fatal(http.Serve(ln, tailnetMux)) }()
+	go func() { log.Fatal(http.Serve(ln, mux)) }()
 
 	// TLS Listener
 	tln, err := s.ListenTLS("tcp", ":443")
@@ -129,7 +132,7 @@ func main() {
 
 	logger.InfoContext(ctx, fmt.Sprintf("listening on https://%s", n))
 
-	log.Fatal(http.Serve(tln, tailnetMux))
+	log.Fatal(http.Serve(tln, mux))
 }
 
 func createConfigDir(dir string) error {

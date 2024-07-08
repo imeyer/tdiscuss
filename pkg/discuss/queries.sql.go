@@ -26,8 +26,8 @@ INSERT INTO thread (subject,member_id,last_member_id) VALUES ($1,$2,$3)
 
 type CreateThreadParams struct {
 	Subject      string
-	MemberID     int32
-	LastMemberID int32
+	MemberID     int64
+	LastMemberID int64
 }
 
 func (q *Queries) CreateThread(ctx context.Context, arg CreateThreadParams) error {
@@ -44,9 +44,9 @@ INSERT INTO
 `
 
 type CreateThreadPostParams struct {
-	ThreadID int32
+	ThreadID int64
 	Body     pgtype.Text
-	MemberID int32
+	MemberID int64
 }
 
 func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostParams) error {
@@ -58,9 +58,9 @@ const getMemberId = `-- name: GetMemberId :one
 SELECT id FROM member WHERE email = $1
 `
 
-func (q *Queries) GetMemberId(ctx context.Context, email string) (int32, error) {
+func (q *Queries) GetMemberId(ctx context.Context, email string) (int64, error) {
 	row := q.db.QueryRow(ctx, getMemberId, email)
-	var id int32
+	var id int64
 	err := row.Scan(&id)
 	return id, err
 }
@@ -91,7 +91,7 @@ const getThreadSubjectById = `-- name: GetThreadSubjectById :one
 SELECT subject FROM thread WHERE id=$1
 `
 
-func (q *Queries) GetThreadSubjectById(ctx context.Context, id int32) (string, error) {
+func (q *Queries) GetThreadSubjectById(ctx context.Context, id int64) (string, error) {
 	row := q.db.QueryRow(ctx, getThreadSubjectById, id)
 	var subject string
 	err := row.Scan(&subject)
@@ -123,17 +123,17 @@ ORDER BY tp.date_posted ASC
 `
 
 type ListThreadPostsRow struct {
-	ID         int32
+	ID         int64
 	DatePosted pgtype.Timestamptz
-	MemberID   pgtype.Int4
+	MemberID   pgtype.Int8
 	Email      pgtype.Text
 	Body       pgtype.Text
 	Subject    pgtype.Text
-	ThreadID   pgtype.Int4
+	ThreadID   pgtype.Int8
 	IsAdmin    pgtype.Bool
 }
 
-func (q *Queries) ListThreadPosts(ctx context.Context, threadID int32) ([]ListThreadPostsRow, error) {
+func (q *Queries) ListThreadPosts(ctx context.Context, threadID int64) ([]ListThreadPostsRow, error) {
 	rows, err := q.db.Query(ctx, listThreadPosts, threadID)
 	if err != nil {
 		return nil, err
@@ -204,11 +204,11 @@ LIMIT 100
 `
 
 type ListThreadsRow struct {
-	ThreadID       int32
+	ThreadID       int64
 	DateLastPosted pgtype.Timestamptz
-	ID             pgtype.Int4
+	ID             pgtype.Int8
 	Email          pgtype.Text
-	Lastid         pgtype.Int4
+	Lastid         pgtype.Int8
 	Lastname       pgtype.Text
 	Subject        string
 	Posts          pgtype.Int4
@@ -221,7 +221,7 @@ type ListThreadsRow struct {
 	Legendary      bool
 }
 
-func (q *Queries) ListThreads(ctx context.Context, memberID int32) ([]ListThreadsRow, error) {
+func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThreadsRow, error) {
 	rows, err := q.db.Query(ctx, listThreads, memberID)
 	if err != nil {
 		return nil, err

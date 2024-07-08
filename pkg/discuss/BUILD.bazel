@@ -6,6 +6,7 @@ go_library(
         "config.go",
         "db.go",
         "member.go",
+        "metrics.go",
         "models.go",
         "queries.sql.go",
         "server.go",
@@ -18,6 +19,7 @@ go_library(
         "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_tailscale//client/tailscale",
     ],
 )
