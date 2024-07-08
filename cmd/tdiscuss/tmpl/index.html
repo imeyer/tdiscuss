@@ -11,7 +11,7 @@
     </colgroup>
     <thead>
         <tr>
-            <th>user</th>
+            <th class="user">user</th>
             <th>subject</th>
             <th>posts</th>
             <th>date</th>
@@ -20,7 +20,7 @@
     <tbody>
         {{ range .Threads }}
         <tr>
-            <td>{{ .Email.String }}</td>
+            <td class="user">{{ .Email.String }}</td>
             <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
             <td>{{ .Posts.Int32 }}</td>
             <td>{{ .DateLastPosted.Time | formatTimestamp }}</td>

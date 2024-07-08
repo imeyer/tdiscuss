@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -47,7 +48,10 @@ func (s *DiscussService) ThreadIndex(w http.ResponseWriter, r *http.Request) {
 		s.queries.CreateMember(context.Background(), email)
 	}
 
+	start := time.Now()
 	threads, err := s.queries.ListThreads(context.Background(), memberId)
+	duration := time.Since(start).Seconds()
+	listThreadsQueryDuration.WithLabelValues("ThreadIndex").Observe(duration)
 	if err != nil {
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
@@ -121,7 +125,10 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	memberId, err := s.queries.GetMemberId(context.Background(), email)
+	duration := time.Since(start).Seconds()
+	getMemberIDQueryDuration.WithLabelValues("CreateThread").Observe(duration)
 	if err != nil {
 		s.logger.Error(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -132,7 +139,10 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		s.queries.CreateMember(context.Background(), email)
 	}
 
+	start = time.Now()
 	threadPosts, err := s.queries.ListThreadPosts(context.Background(), int32(threadID))
+	duration = time.Since(start).Seconds()
+	listThreadPostsQueryDuration.WithLabelValues("ListThreads").Observe(duration)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -186,12 +196,15 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	start := time.Now()
 	memberId, err := s.queries.GetMemberId(context.Background(), email)
 	if err != nil {
 		s.logger.Debug(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
+	duration := time.Since(start).Seconds()
+	getMemberIDQueryDuration.WithLabelValues("CreateThread").Observe(duration)
 
 	threadTx, err := s.dbconn.Begin(context.Background())
 	if err != nil {

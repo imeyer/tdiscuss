@@ -8,8 +8,6 @@ import (
 	"tailscale.com/client/tailscale"
 )
 
-const formDataLimit = 32 * 1024
-
 type DiscussService struct {
 	tailClient *tailscale.LocalClient
 	logger     *slog.Logger

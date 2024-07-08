@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/imeyer/tdiscuss/pkg/discuss"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -101,11 +102,12 @@ func main() {
 	)
 
 	tailnetMux := http.NewServeMux()
-	tailnetMux.HandleFunc("/", dsvc.ThreadIndex)
+	tailnetMux.HandleFunc("GET /", dsvc.ThreadIndex)
 	tailnetMux.HandleFunc("GET /thread/new", dsvc.DiscussionNew)
 	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
 	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreads)
 	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
+	tailnetMux.Handle("GET /metrics", promhttp.Handler())
 
 	// Non-TLS listener
 	ln, err := s.Listen("tcp", ":80")
