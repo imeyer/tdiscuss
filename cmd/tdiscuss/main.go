@@ -101,6 +101,9 @@ func main() {
 		n,
 	)
 
+	// For static assets like css, js etc
+	fs := http.FileServer(http.Dir("./static"))
+
 	tailnetMux := http.NewServeMux()
 	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
 	tailnetMux.HandleFunc("GET /thread/new", dsvc.ThreadNew)
@@ -108,6 +111,7 @@ func main() {
 	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
 	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
 	tailnetMux.Handle("GET /metrics", promhttp.Handler())
+	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", fs))
 
 	// Instrument all the routes!
 	mux := discuss.HistogramHttpHandler(tailnetMux)

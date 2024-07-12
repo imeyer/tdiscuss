@@ -1,37 +1,30 @@
 {{ template "header" .}}
-<h1>{{ .Title }}</h1>
-<h2>{{ .TPD.Subject }}</h2>
+<h2>{{ .Title }}</h2>
 
-<table>
-    <tbody>
-        {{ range .TPD.ThreadPosts }}
-        <tr>
-            <td>On {{ .DatePosted.Time | formatTimestamp}}, {{ .Email.String }} posted</td>
-        </tr>
-        <tr>
-            <td>{{ .Body.String }}</td>
-        </tr>
-        {{ else }}
-        <tr>
-            <td>Nothing here?</td>
-        </tr>
-        {{ end}}
-    </tbody>
-</table>
+<h3>{{ .TPD.Subject }}</h3>
+
+{{ range .TPD.ThreadPosts }}
+<div class="threadpost-bubble">
+    <div class="threadpost-header">
+        On {{ .DatePosted.Time | formatTimestamp}}, {{ .Email.String }} posted
+    </div>
+    <div class="threadpost-body">
+        {{ .Body.String }}
+    </div>
+</div>
+{{ end }}
 <p>
-<form action="/thread/{{ .TPD.ID }}" method="POST">
-    <table>
-        <tbody>
-            <tr>
-                <td>
-                    <label for="thread_body">Body:</label><br>
-                    <textarea rows="10" cols="25" name="thread_body"></textarea><br />
-                    <button type="submit" onclick="">Post it!</button>
-                </td>
-            </tr>
-        </tbody>
-    </table>
-</form>
+<div class="form-container">
+    <form action="/thread/{{ .TPD.ID }}" method="POST">
+        <div class="form-group">
+            <label for="thread_body">reply...</label>
+            <textarea id="thread_body" name="thread_body" rows="10" cols="75" required></textarea>
+        </div>
+        <div class="form-group">
+            <button type="submit">Post it!</button>
+        </div>
+    </form>
+</div>
 </p>
 
 {{ template "footer" .}}
