@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"log/slog"
-
 	"time"
 
 	"github.com/jackc/pgx/v5"

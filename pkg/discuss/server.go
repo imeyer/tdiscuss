@@ -22,7 +22,8 @@ func NewService(tailClient *tailscale.LocalClient,
 	dbconn *pgxpool.Pool,
 	queries *Queries,
 	tmpls *template.Template,
-	httpsURL string) *DiscussService {
+	httpsURL string,
+) *DiscussService {
 	return &DiscussService{
 		tailClient: tailClient,
 		dbconn:     dbconn,
