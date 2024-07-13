@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -315,12 +316,12 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
 	s.logger.DebugContext(r.Context(), "rendering error", "error", err.Error())
-	responseBody := []byte(http.StatusText(code))
+	responseBody := http.StatusText(code)
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
 	w.WriteHeader(code)
 
-	written, writeErr := w.Write(responseBody)
+	written, writeErr := io.WriteString(w, responseBody)
 	if writeErr != nil {
 		s.logger.DebugContext(r.Context(), "error writing response", "error", writeErr.Error())
 	}
