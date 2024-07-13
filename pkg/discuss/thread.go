@@ -320,9 +320,9 @@ func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
 	w.WriteHeader(code)
 
-	written, err := w.Write([]byte(http.StatusText(code)))
-	if err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
+	written, writeErr := w.Write(responseBody)
+	if writeErr != nil {
+		s.logger.DebugContext(r.Context(), "error writing response", "error", writeErr.Error())
 	}
 	s.logger.DebugContext(r.Context(), "error response written", slog.String("bytes", fmt.Sprint(written)))
 }
