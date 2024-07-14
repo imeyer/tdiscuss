@@ -38,13 +38,13 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memberId, err := s.queries.GetMemberId(context.Background(), email)
+	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	if err != nil && memberId == 0 {
 		s.queries.CreateMember(context.Background(), email)
 	}
 
 	start := time.Now()
-	threads, err := s.queries.ListThreads(context.Background(), memberId)
+	threads, err := s.queries.ListThreads(r.Context(), memberId)
 	duration := time.Since(start).Seconds()
 	listThreadsQueryDuration.WithLabelValues("ListThreads").Observe(duration)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 
 	tpd.ID = threadID
 
-	subject, err := s.queries.GetThreadSubjectById(context.Background(), threadID)
+	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
 	if err != nil {
 		s.logger.Error(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -125,7 +125,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	}
 
 	start := time.Now()
-	memberId, err := s.queries.GetMemberId(context.Background(), email)
+	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	duration := time.Since(start).Seconds()
 	getMemberIDQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
 	if err != nil {
@@ -135,11 +135,11 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	}
 
 	if memberId == 0 {
-		s.queries.CreateMember(context.Background(), email)
+		s.queries.CreateMember(r.Context(), email)
 	}
 
 	start = time.Now()
-	threadPosts, err := s.queries.ListThreadPosts(context.Background(), threadID)
+	threadPosts, err := s.queries.ListThreadPosts(r.Context(), threadID)
 	duration = time.Since(start).Seconds()
 	listThreadPostsQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
 	if err != nil {
@@ -196,7 +196,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
-	memberId, err := s.queries.GetMemberId(context.Background(), email)
+	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	duration := time.Since(start).Seconds()
 	getMemberIDQueryDuration.WithLabelValues("CreateThread").Observe(duration)
 	if err != nil {
@@ -205,7 +205,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadTx, err := s.dbconn.Begin(context.Background())
+	threadTx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -213,7 +213,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	qtx1 := s.queries.WithTx(threadTx)
-	err = qtx1.CreateThread(context.Background(), CreateThreadParams{
+	err = qtx1.CreateThread(r.Context(), CreateThreadParams{
 		Subject:      template.HTMLEscapeString(r.Form.Get("subject")),
 		MemberID:     memberId,
 		LastMemberID: memberId,
@@ -224,7 +224,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	threadId, err := qtx1.GetThreadSequenceId(context.Background())
+	threadId, err := qtx1.GetThreadSequenceId(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -245,7 +245,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = threadTx.Commit(context.Background())
+	err = threadTx.Commit(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -288,7 +288,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	memberId, err := s.queries.GetMemberId(context.Background(), email)
+	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	if err != nil {
 		s.logger.Debug(err.Error())
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -298,7 +298,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	var body pgtype.Text
 	body.Scan(r.Form.Get("thread_body"))
 
-	err = s.queries.CreateThreadPost(context.Background(), CreateThreadPostParams{
+	err = s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		Body:     body,
 		MemberID: memberId,
 		ThreadID: threadID,
@@ -309,7 +309,16 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("%v://%s/", r.URL.Scheme, r.URL.Host), http.StatusSeeOther)
+	var host string
+
+	switch r.URL.Host {
+	case "discuss":
+		host = "discuss"
+	default:
+		host = "discuss"
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("%v://%s/", r.URL.Scheme, host), http.StatusSeeOther)
 }
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
@@ -334,7 +343,7 @@ func ParseThreadID(path string) (int64, error) {
 
 	id, err := strconv.ParseInt(matches[1], 0, 64)
 	if err != nil {
-		return 0, fmt.Errorf("error converting ID to integer: %v", err)
+		return 0, fmt.Errorf("error converting ID to integer: %w", err)
 	}
 
 	return id, nil
