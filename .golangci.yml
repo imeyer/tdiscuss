@@ -3,17 +3,20 @@ run:
 
 linters:
   enable:
-    - gofumpt
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - containedctx
+    - contextcheck
+    - decorder
+    - dupl
+    - dupword
+    - errname
     - errorlint
+    - gofumpt
+    - gosec
+    - sloglint
+    - staticcheck
+    - tenv
     - unconvert
     - unparam
-    - bidichk
-    - decorder
-    - errname
-    - execinquery
-    - containedctx
-    - sloglint
-    - tenv
-    - staticcheck
-
-linters-settings:
