@@ -116,6 +116,22 @@ func main() {
 	// Instrument all the routes!
 	mux := discuss.HistogramHttpHandler(tailnetMux)
 
+	serverPlain := &http.Server{
+		Addr:         ":80",
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+
+	serverTls := &http.Server{
+		Addr:         ":443",
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  30 * time.Second,
+	}
+
 	// Non-TLS listener
 	ln, err := s.Listen("tcp", ":80")
 	if err != nil {
@@ -125,7 +141,7 @@ func main() {
 
 	logger.InfoContext(ctx, fmt.Sprintf("listening on http://%s", *hostname))
 
-	go func() { log.Fatal(http.Serve(ln, mux)) }()
+	go func() { log.Fatal(serverPlain.Serve(ln)) }()
 
 	// TLS Listener
 	tln, err := s.ListenTLS("tcp", ":443")
@@ -136,7 +152,7 @@ func main() {
 
 	logger.InfoContext(ctx, fmt.Sprintf("listening on https://%s", n))
 
-	log.Fatal(http.Serve(tln, mux))
+	log.Fatal(serverTls.Serve(tln))
 }
 
 func createConfigDir(dir string) error {
