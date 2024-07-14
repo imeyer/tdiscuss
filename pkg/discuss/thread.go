@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"io"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -82,16 +81,15 @@ func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
 		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 	}
 
-	err = s.tmpls.ExecuteTemplate(w, "newthread.html", struct {
+	if err := s.tmpls.ExecuteTemplate(w, "newthread.html", struct {
 		User  string
 		Title string
 	}{
 		User:  "ianmmeyer@gmail.com",
 		Title: "New thread!",
-	})
-	if err != nil {
+	}); err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
-		s.RenderError(w, r, err, http.StatusUnsupportedMediaType)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 }
@@ -222,7 +220,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, err, http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -243,7 +241,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, err, http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -307,7 +305,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, err, http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -316,16 +314,14 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
 	s.logger.DebugContext(r.Context(), "rendering error", "error", err.Error())
-	responseBody := http.StatusText(code)
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(responseBody)))
-	w.WriteHeader(code)
-
-	written, writeErr := io.WriteString(w, responseBody)
-	if writeErr != nil {
-		s.logger.DebugContext(r.Context(), "error writing response", "error", writeErr.Error())
+	if err := s.tmpls.ExecuteTemplate(w, "error.html", struct {
+		Error string
+	}{
+		err.Error(),
+	}); err != nil {
+		s.logger.DebugContext(r.Context(), err.Error())
+		return
 	}
-	s.logger.DebugContext(r.Context(), "error response written", slog.String("bytes", fmt.Sprint(written)))
 }
 
 func ParseThreadID(path string) (int64, error) {
