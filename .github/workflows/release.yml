@@ -1,0 +1,53 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # This triggers the workflow for tags starting with 'v'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        goos: [darwin, linux]
+        goarch: [amd64, arm64]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.5'  # Adjust the Go version as needed
+
+    - name: Get Git Commit SHA
+      id: git_info
+      run: echo "::set-output name=sha::$(git rev-parse --short HEAD)"
+
+    - name: Build the project
+      run: |
+        GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+        go build -ldflags "-X main.version=${{ github.ref_name }} -X main.gitCommit=${{ steps.git_info.outputs.sha }}" \
+        -o tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }} cmd/tdiscuss/main.go
+
+    - name: Create GitHub Release
+      id: create_release
+      uses: actions/create-release@v1
+      with:
+        tag_name: ${{ github.ref_name }}
+        release_name: Release ${{ github.ref_name }}
+        draft: true
+        prerelease: true
+        generate_release_notes: true
+
+    - name: Upload release assets
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+        asset_name: tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+        asset_content_type: application/octet-stream
+
