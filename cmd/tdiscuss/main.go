@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/imeyer/tdiscuss/pkg/discuss"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,14 +30,25 @@ var templateFiles embed.FS
 var (
 	hostname        = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
 	dataDir         = flag.String("data-location", dataLocation(), "Configuration data location.")
-	debug           = flag.Bool("debug", true, "Enable debug logging")
+	debug           = flag.Bool("debug", false, "Enable debug logging")
 	tsnetLogVerbose = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
+	version         = "dev"
+	gitSha          = "no-commit"
+
+	versionGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "tdiscuss_build_info",
+		Help: "A gauge with version and git commit information",
+	}, []string{"version", "git_commit"})
 )
 
 func main() {
 	flag.Parse()
 
+	prometheus.MustRegister(versionGauge)
+
 	hostinfo.SetApp("tdiscuss")
+
+	versionGauge.With(prometheus.Labels{"version": version, "git_commit": gitSha}).Set(1)
 
 	ctx := context.Background()
 
