@@ -158,8 +158,9 @@ th {
     padding: 10px;
     border: 1px solid #ccc;
     border-radius: 5px;
-    font-size: 1em;
+    font-size: 0.9em;
     resize: none;
+    color: #555;
 }
 
 .form-group textarea:focus {
