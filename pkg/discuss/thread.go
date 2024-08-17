@@ -1,7 +1,6 @@
 package discuss
 
 import (
-	"context"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -28,7 +27,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -40,7 +39,11 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	if err != nil && memberId == 0 {
-		s.queries.CreateMember(context.Background(), email)
+		if err := s.queries.CreateMember(r.Context(), email); err != nil {
+			s.logger.Debug(err.Error())
+			s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	start := time.Now()
@@ -48,7 +51,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(start).Seconds()
 	listThreadsQueryDuration.WithLabelValues("ListThreads").Observe(duration)
 	if err != nil {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -72,13 +75,13 @@ func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
 	_, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
 	if err != nil {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 	}
 
 	if err := s.tmpls.ExecuteTemplate(w, "newthread.html", struct {
@@ -89,7 +92,7 @@ func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
 		Title: "New thread!",
 	}); err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 }
@@ -107,14 +110,14 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
 	if err != nil {
 		s.logger.Error(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	tpd.Subject = subject
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -130,12 +133,16 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	getMemberIDQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
 	if err != nil {
 		s.logger.Error(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	if memberId == 0 {
-		s.queries.CreateMember(r.Context(), email)
+		if err := s.queries.CreateMember(r.Context(), email); err != nil {
+			s.logger.Error(err.Error())
+			s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	start = time.Now()
@@ -144,7 +151,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	listThreadPostsQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -165,33 +172,33 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 
 func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/thread/new" {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusNotFound)), http.StatusNotFound)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusNotFound)), http.StatusNotFound)
 		return
 	}
 
 	if r.Method != "POST" {
 		s.logger.DebugContext(r.Context(), "invalid method", "method", r.Method)
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
 	err := r.ParseForm()
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "unknown content type", slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
 
 	if !r.Form.Has("subject") && !r.Form.Has("thread_body") {
 		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: thread, and thread_body are required", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
 
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting tailscale user")
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -201,14 +208,14 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	getMemberIDQueryDuration.WithLabelValues("CreateThread").Observe(duration)
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	threadTx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
@@ -220,19 +227,24 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	threadId, err := qtx1.GetThreadSequenceId(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	var body pgtype.Text
-	body.Scan(r.Form.Get("thread_body"))
+	err = body.Scan(r.Form.Get("thread_body"))
+	if err != nil {
+		s.logger.Debug(err.Error())
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		return
+	}
 
 	err = qtx1.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadId,
@@ -241,14 +253,14 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	err = threadTx.Commit(r.Context())
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 	s.logger.DebugContext(r.Context(), "thread created", "threadId", threadId)
@@ -259,44 +271,50 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		s.logger.DebugContext(r.Context(), "invalid method", "method", r.Method)
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
 		return
 	}
 
 	threadID, err := ParseThreadID(r.URL.Path)
 	if err != nil {
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	err = r.ParseForm()
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "unknown content type", slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
 
 	if !r.Form.Has("thread_body") {
 		s.logger.DebugContext(r.Context(), fmt.Sprintf("%s: thread_body is required", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
 		return
 	}
 
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting tailscale user")
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	memberId, err := s.queries.GetMemberId(r.Context(), email)
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
 	var body pgtype.Text
-	body.Scan(r.Form.Get("thread_body"))
+	err = body.Scan(r.Form.Get("thread_body"))
+	if err != nil {
+		s.logger.Debug(err.Error())
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		return
+	}
 
 	err = s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		Body:     body,
@@ -305,20 +323,20 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	})
 	if err != nil {
 		s.logger.Debug(err.Error())
-		s.RenderError(w, r, fmt.Errorf(http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
-	var host string
+	// var host string
 
-	switch r.URL.Host {
-	case "discuss":
-		host = "discuss"
-	default:
-		host = "discuss"
-	}
+	// switch r.URL.Host {
+	// case "discuss":
+	// 	host = "discuss"
+	// default:
+	// 	host = "discuss"
+	// }
 
-	http.Redirect(w, r, fmt.Sprintf("%v://%s/", r.URL.Scheme, host), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("%v://%v/", r.URL.Scheme, r.URL.Host), http.StatusSeeOther)
 }
 
 func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
