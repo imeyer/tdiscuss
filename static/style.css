@@ -94,6 +94,11 @@ th {
     padding-right: 10px;
 }
 
+.version {
+    font-size: x-small;
+    font-family: 'Courier New', Courier, monospace
+}
+
 .threadpost-bubble {
     background-color: #fff;
     border-radius: 15px;

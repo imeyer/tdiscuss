@@ -59,7 +59,11 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	if err := s.tmpls.ExecuteTemplate(w, "index.html", struct {
 		Title   string
 		Threads []ListThreadsRow
+		Version string
+		GitSha  string
 	}{
+		Version: s.version,
+		GitSha:  s.gitSha,
 		Title:   "tdiscuss - A Discussion Board for your Tailnet",
 		Threads: threads,
 	}); err != nil {
@@ -79,17 +83,21 @@ func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	whois, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
 	if err != nil {
 		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 	}
 
 	if err := s.tmpls.ExecuteTemplate(w, "newthread.html", struct {
-		User  string
-		Title string
+		User    string
+		Title   string
+		Version string
+		GitSha  string
 	}{
-		User:  "ianmmeyer@gmail.com",
-		Title: "New thread!",
+		User:    whois.UserProfile.LoginName,
+		Title:   "New thread!",
+		Version: s.version,
+		GitSha:  s.gitSha,
 	}); err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
@@ -159,11 +167,15 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 
 	s.logger.DebugContext(r.Context(), "index fetch", "route", r.URL.Path, "rows", len(threadPosts))
 	if err := s.tmpls.ExecuteTemplate(w, "thread.html", struct {
-		Title string
-		TPD   ThreadPostData
+		Version string
+		GitSha  string
+		Title   string
+		TPD     ThreadPostData
 	}{
-		Title: "tdiscuss - A Discussion Board for your Tailnet",
-		TPD:   tpd,
+		Version: s.version,
+		GitSha:  s.gitSha,
+		Title:   "tdiscuss - A Discussion Board for your Tailnet",
+		TPD:     tpd,
 	}); err != nil {
 		s.logger.DebugContext(r.Context(), err.Error())
 		return

@@ -111,6 +111,8 @@ func main() {
 		queries,
 		tmpls,
 		n,
+		version,
+		gitSha,
 	)
 
 	// For static assets like css, js etc

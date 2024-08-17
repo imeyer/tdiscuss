@@ -15,6 +15,8 @@ type DiscussService struct {
 	queries    *Queries
 	tmpls      *template.Template
 	httpsURL   string
+	version    string
+	gitSha     string
 }
 
 func NewService(tailClient *tailscale.LocalClient,
@@ -23,6 +25,8 @@ func NewService(tailClient *tailscale.LocalClient,
 	queries *Queries,
 	tmpls *template.Template,
 	httpsURL string,
+	version string,
+	gitSha string,
 ) *DiscussService {
 	return &DiscussService{
 		tailClient: tailClient,
@@ -31,5 +35,7 @@ func NewService(tailClient *tailscale.LocalClient,
 		logger:     logger,
 		tmpls:      tmpls,
 		httpsURL:   httpsURL,
+		version:    version,
+		gitSha:     gitSha,
 	}
 }
