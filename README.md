@@ -7,7 +7,7 @@ Why not? Who doesn't want a discussion board for their tailnet? Honestly, I've o
 
 ## Building
 
-1. `go build -o tdiscuss cmd/tdiscuss/main.go`
+1. `go build -ldflags "-X main.version=0.0.1 -X main.gitSha=$(git rev-parse --short HEAD)" -o tdiscuss cmd/tdiscuss/main.go`
 
 ## Running
 
@@ -17,19 +17,6 @@ Why not? Who doesn't want a discussion board for their tailnet? Honestly, I've o
 1. `psql < sqlc/schema.sql`
 2. `DATABASE_URL=<valid dsn> TS_AUTHKEY=<key from step 2>`
 
-You should see some logs fly past until debugging gets turned off by default... they will look kinda like..
-```
-{
-  "time": "2024-07-07T19:49:31.283917-07:00",
-  "level": "INFO",
-  "msg": "tsnet running state path xxx/Library/Application Support/tailscale/discuss/tsnet/tailscaled.state"
-}
-{
-  "time": "2024-07-07T19:49:31.284866-07:00",
-  "level": "INFO",
-  "msg": "tsnet starting with hostname \"discuss\", varRoot \"xxx/Library/Application Support/tailscale/discuss/tsnet\""
-}
-```
 Success looks like
 ```
 {
