@@ -27,12 +27,12 @@ import (
 var templateFiles embed.FS
 
 var (
-	hostname        = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
-	dataDir         = flag.String("data-location", dataLocation(), "Configuration data location.")
-	debug           = flag.Bool("debug", false, "Enable debug logging")
-	tsnetLogVerbose = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
-	version         = "dev"
-	gitSha          = "no-commit"
+	hostname               = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
+	dataDir                = flag.String("data-location", dataLocation(), "Configuration data location.")
+	debug                  = flag.Bool("debug", false, "Enable debug logging")
+	tsnetLogVerbose        = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
+	version         string = "dev"
+	gitSha          string = "no-commit"
 
 	versionGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "tdiscuss_build_info",
