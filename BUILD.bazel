@@ -1,4 +1,51 @@
 load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "go_library")
+load("helper.bzl", "cross_compile_binary")
+load("platforms.def.bzl", "PLATFORMS")
 
-# gazelle:prefix github.com/imeyer/tdiscuss
 gazelle(name = "gazelle")
+
+# Name of the binary
+NAME = "tdiscuss"
+
+go_library(
+    name = "{}_lib".format(NAME),
+    srcs = [
+        "config.go",
+        "db.go",
+        "main.go",
+        "member.go",
+        "metrics.go",
+        "models.go",
+        "queries.sql.go",
+        "server.go",
+        "thread.go",
+    ],
+    embedsrcs = [
+        "tmpl/error.html",
+        "tmpl/footer.html",
+        "tmpl/header.html",
+        "tmpl/index.html",
+        "tmpl/newthread.html",
+        "tmpl/thread.html",
+    ],
+    importpath = "github.com/imeyer/{}".format(NAME),
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_tailscale//client/tailscale",
+        "@com_tailscale//hostinfo",
+        "@com_tailscale//tsnet",
+    ],
+)
+
+[cross_compile_binary(
+    name = NAME,
+    goarch = goarch,
+    goos = goos,
+) for (goos, goarch) in PLATFORMS]

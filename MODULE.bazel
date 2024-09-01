@@ -1,7 +1,8 @@
+"""tdiscuss messageboard"""
+
 module(
     name = "tdiscuss",
     version = "0.0.1",
-    repo_name = "io_imeyer_tdiscuss",
 )
 
 bazel_dep(name = "rules_go", version = "0.48.1", repo_name = "rules_go")

@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/imeyer/tdiscuss/pkg/discuss"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -61,7 +60,7 @@ func main() {
 	logger := newLogger(&lvl)
 
 	// Open DB connection
-	dbconn, err := pgxpool.NewWithConfig(context.Background(), discuss.PoolConfig(os.Getenv("DATABASE_URL"), logger))
+	dbconn, err := pgxpool.NewWithConfig(context.Background(), PoolConfig(os.Getenv("DATABASE_URL"), logger))
 	if err != nil {
 		log.Fatalf("Unable to connect to database: %v\n", err)
 	}
@@ -98,13 +97,13 @@ func main() {
 	if !ok {
 		log.Fatalf("no hostname for https")
 	}
-	queries := discuss.New(dbconn)
+	queries := New(dbconn)
 
 	tmpls := template.Must(template.New("any").Funcs(template.FuncMap{
 		"formatTimestamp": formatTimestamp,
 	}).ParseFS(templateFiles, "tmpl/*html"))
 
-	dsvc := discuss.NewService(
+	dsvc := NewService(
 		lc,
 		logger,
 		dbconn,
@@ -128,7 +127,7 @@ func main() {
 	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", fs))
 
 	// Instrument all the routes!
-	mux := discuss.HistogramHttpHandler(tailnetMux)
+	mux := HistogramHttpHandler(tailnetMux)
 
 	serverPlain := &http.Server{
 		Addr:         ":80",
