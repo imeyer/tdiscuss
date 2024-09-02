@@ -13,6 +13,7 @@ go_library(
     srcs = [
         "config.go",
         "db.go",
+        "helpers.go",
         "main.go",
         "member.go",
         "metrics.go",

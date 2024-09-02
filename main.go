@@ -72,7 +72,7 @@ func main() {
 
 	s := NewTsNetServer(dataDir)
 
-	if *tsnetLogVerbose {
+	if *tsnetLog {
 		s.Logf = log.Printf
 	}
 
