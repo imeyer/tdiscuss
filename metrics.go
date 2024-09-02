@@ -60,6 +60,7 @@ func init() {
 	prometheus.MustRegister(listThreadsQueryDuration)
 	prometheus.MustRegister(listThreadPostsQueryDuration)
 	prometheus.MustRegister(httpRequestDuration)
+	prometheus.MustRegister(versionGauge)
 }
 
 func HistogramHttpHandler(next http.Handler) http.HandlerFunc {
