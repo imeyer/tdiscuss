@@ -270,14 +270,14 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	// Check if we are serving via https
 	if r.TLS != nil {
-		nopeers, err := s.tailClient.StatusWithoutPeers(r.Context())
-		if err != nil {
-			s.handleError(w, r, "error getting StatusWithoutPeers()", http.StatusInternalServerError)
+		certDomain, ok := s.tailClient.ExpandSNIName(r.Context(), hostname)
+		if !ok {
+			s.handleError(w, r, "can not expand SNI name", http.StatusInternalServerError)
 			return
 		}
 
 		scheme = "https"
-		hostname = nopeers.CertDomains[0]
+		hostname = certDomain
 	}
 
 	if r.Host != hostname {
