@@ -31,11 +31,6 @@ var (
 	tsnetLogVerbose        = flag.Bool("tsnet-verbose", false, "Have tsnet log verbosely to standard error")
 	version         string = "dev"
 	gitSha          string = "no-commit"
-
-	versionGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "tdiscuss_build_info",
-		Help: "A gauge with version and git commit information",
-	}, []string{"version", "git_commit"})
 )
 
 func main() {

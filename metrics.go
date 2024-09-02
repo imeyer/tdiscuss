@@ -9,6 +9,11 @@ import (
 )
 
 var (
+	versionGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "tdiscuss_build_info",
+		Help: "A gauge with version and git commit information",
+	}, []string{"version", "git_commit"})
+
 	getMemberIDQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: "tdiscuss_queries",
