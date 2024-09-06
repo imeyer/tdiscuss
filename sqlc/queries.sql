@@ -14,8 +14,8 @@ SELECT currval('thread_id_seq');
 -- name: GetThreadPostSequenceId :one
 SELECT currval('thread_id_post_seq');
 
--- name: CreateMember :exec
-INSERT INTO member (email) values ($1);
+-- name: CreateOrReturnID :one
+SELECT createOrReturnID($1);
 
 -- name: GetMemberId :one
 SELECT id FROM member WHERE email = $1;

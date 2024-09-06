@@ -1,21 +1,21 @@
 {{ template "header" .}}
 <h2><a href="/">{{ .Title }}</a></h2>
 
-<h3>{{ .TPD.Subject }}</h3>
+<h3>{{ .Subject }}</h3>
 
-{{ range .TPD.ThreadPosts }}
+{{ range .ThreadPosts }}
 <div class="threadpost-bubble">
     <div class="threadpost-header">
         On {{ .DatePosted.Time | formatTimestamp}}, {{ .Email.String }} posted
     </div>
     <div class="threadpost-body">
-        {{ .Body.String }}
+        {{ .Body }}
     </div>
 </div>
 {{ end }}
 <p>
 <div class="form-container">
-    <form action="/thread/{{ .TPD.ID }}" method="POST">
+    <form action="/thread/{{ .ID }}" method="POST">
         <div class="form-group">
             <label for="thread_body">reply...</label>
             <textarea id="thread_body" name="thread_body" rows="10" cols="75" required></textarea>

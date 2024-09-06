@@ -9,17 +9,17 @@ CREATE TABLE board_data
 CREATE TABLE member
 (
   id                   bigserial UNIQUE PRIMARY KEY,
-  date_joined          timestamptz DEFAULT now(),                    -- date of signup
-  date_first_post       date,                                       -- the date of the member's first post
-  email                varchar NOT NULL CHECK(email <> ''),    -- email used to sign up
-  total_threads        int DEFAULT 0,                              -- member's total threads created
-  total_thread_posts   int DEFAULT 0,                              -- member's total posts
-  last_view            timestamp,                                  -- last view of board
-  last_post            timestamp,                                  -- last post to board
-  last_chat            timestamp,                                  -- last time user chatted
-  last_search          timestamp,                                  -- last time user searched
-  banned               bool DEFAULT false,                         -- banned user?
-  is_admin             bool DEFAULT false,                         -- is admin?
+  date_joined          timestamptz DEFAULT now(),            -- date of signup
+  date_first_post      date,                                 -- the date of the member's first post
+  email                varchar NOT NULL CHECK(email <> ''),  -- email used to sign up
+  total_threads        int DEFAULT 0,                        -- member's total threads created
+  total_thread_posts   int DEFAULT 0,                        -- member's total posts
+  last_view            timestamp,                            -- last view of board
+  last_post            timestamp,                            -- last post to board
+  last_chat            timestamp,                            -- last time user chatted
+  last_search          timestamp,                            -- last time user searched
+  banned               bool DEFAULT false,                   -- banned user?
+  is_admin             bool DEFAULT false,                   -- is admin?
   cookie               char(32),
   session              char(32)
 );
@@ -72,28 +72,28 @@ CREATE TABLE member_pref
 CREATE TABLE thread
 (
   id                 bigserial UNIQUE PRIMARY KEY,
-  member_id          bigint NOT NULL,                               -- id of member who created thread
-  subject            text NOT NULL CHECK(subject <> ''), -- subject of thread
-  date_posted        timestamptz not NULL DEFAULT now(),           -- date thread was created
-  first_post_id       int,                                        -- first post id
-  posts              int DEFAULT 0,                              -- total posts in a thread
-  views              int DEFAULT 0,                              -- total views to thread
-  sticky             bool DEFAULT false,                         -- thread sticky flag
-  locked             bool DEFAULT false,                         -- thread locked flag
-  last_member_id     bigint NOT NULL,                               -- last member who posted to thread
-  date_last_posted   timestamptz NOT NULL DEFAULT now(),           -- time last post was entered
-  indexed            bool NOT NULL DEFAULT false,                -- has been indexed: for search indexer
-  edited             bool NOT NULL DEFAULT false,                -- has been edited: for search indexer
-  deleted            bool NOT NULL DEFAULT false,                -- flagged for deletion: for search indexer
+  member_id          bigint NOT NULL,                     -- id of member who created thread
+  subject            text NOT NULL CHECK(subject <> ''),  -- subject of thread
+  date_posted        timestamptz not NULL DEFAULT now(),  -- date thread was created
+  first_post_id       int,                                -- first post id
+  posts              int DEFAULT 0,                       -- total posts in a thread
+  views              int DEFAULT 0,                       -- total views to thread
+  sticky             bool DEFAULT false,                  -- thread sticky flag
+  locked             bool DEFAULT false,                  -- thread locked flag
+  last_member_id     bigint NOT NULL,                     -- last member who posted to thread
+  date_last_posted   timestamptz NOT NULL DEFAULT now(),  -- time last post was entered
+  indexed            bool NOT NULL DEFAULT false,         -- has been indexed: for search indexer
+  edited             bool NOT NULL DEFAULT false,         -- has been edited: for search indexer
+  deleted            bool NOT NULL DEFAULT false,         -- flagged for deletion: for search indexer
   legendary          bool NOT NULL DEFAULT false
 );
 
 CREATE TABLE thread_post
 (
   id            bigserial UNIQUE PRIMARY KEY,
-  thread_id     bigint NOT NULL,                  -- thread post belongs to
-  date_posted   timestamptz DEFAULT now(),       -- time this post was created
-  member_id     bigint NOT NULL,                  -- id of member who created post
+  thread_id     bigint NOT NULL,               -- thread post belongs to
+  date_posted   timestamptz DEFAULT now(),     -- time this post was created
+  member_id     bigint NOT NULL,               -- id of member who created post
   indexed       bool NOT NULL DEFAULT false,   -- has been indexed by search indexer
   edited        bool NOT NULL DEFAULT false,   -- has been edited: for search indexer
   deleted       bool NOT NULL DEFAULT false,   -- flagged for deletion: for search indexer
@@ -114,13 +114,13 @@ CREATE TABLE thread_member
 CREATE TABLE message
 (
   id                 bigserial UNIQUE PRIMARY KEY,
-  member_id          bigint NOT NULL,                               -- id of member who created message
+  member_id          bigint NOT NULL,                            -- id of member who created message
   subject            varchar(200) NOT NULL CHECK(subject <> ''), -- subject of message
   first_post_id      int,                                        -- first post id for message
   date_posted        timestamp NOT NULL DEFAULT now(),           -- date message was created
   posts              int DEFAULT 0,                              -- total posts in a message
   views              int DEFAULT 0,                              -- total views to message
-  last_member_id     bigint NOT NULL,                               -- last member to reply
+  last_member_id     bigint NOT NULL,                            -- last member to reply
   date_last_posted   timestamp NOT NULL DEFAULT now()
 );
 
@@ -350,9 +350,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION createOrReturnID(p_email VARCHAR(255))
+RETURNS BIGINT AS $$
+DECLARE
+    v_id BIGINT;
+BEGIN
+    -- Try to find the existing email
+    SELECT id INTO v_id
+    FROM member
+    WHERE email = p_email;
+
+    -- If the email doesn't exist, create a new record
+    IF v_id IS NULL THEN
+        INSERT INTO member (email)
+        VALUES (p_email)
+        RETURNING id INTO v_id;
+    END IF;
+
+    -- Return the ID (either existing or newly created)
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- start member
--- CREATE UNIQUE INDEX member_name_lower_index ON member(REPLACE(LOWER(name),' ',''));
 CREATE UNIQUE INDEX member_email_lower_index ON member(LOWER(email));
+CREATE UNIQUE INDEX member_email_index ON member(email);
 CREATE INDEX member_last_post_index ON member(last_post);
 CREATE INDEX member_last_view_index ON member(last_view);
 

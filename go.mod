@@ -4,6 +4,8 @@ go 1.23.0
 
 require (
 	github.com/jackc/pgx/v5 v5.6.0
+	github.com/yuin/goldmark v1.7.4
+	github.com/yuin/goldmark-emoji v1.0.3
 	tailscale.com v1.72.1
 )
 

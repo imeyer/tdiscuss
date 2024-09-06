@@ -5,379 +5,316 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
-	"regexp"
-	"strconv"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type ThreadData struct{}
-
-type ThreadPostData struct {
-	ID          int64
-	ThreadPosts []ListThreadPostsRow
-	Subject     string
+// Struct for template data rendering
+type ThreadPostTemplateData struct {
+	ID         int64
+	DatePosted pgtype.Timestamptz
+	MemberID   pgtype.Int8
+	Email      pgtype.Text
+	Body       template.HTML
+	Subject    pgtype.Text
+	ThreadID   pgtype.Int8
+	IsAdmin    pgtype.Bool
 }
 
-func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
+type ThreadTemplateData struct {
+	ThreadID       int64
+	DateLastPosted pgtype.Timestamptz
+	ID             pgtype.Int8
+	Email          pgtype.Text
+	Lastid         pgtype.Int8
+	Lastname       pgtype.Text
+	Subject        template.HTML
+	Posts          pgtype.Int4
+	Views          pgtype.Int4
+	Body           pgtype.Text
+	LastViewPosts  interface{}
+	Dot            string
+	Sticky         pgtype.Bool
+	Locked         pgtype.Bool
+	Legendary      bool
+}
 
-	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusNotFound)), http.StatusMethodNotAllowed)
+// ListThreads displays the list of threads on the main page.
+func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" || r.Method != http.MethodGet {
+		http.NotFound(w, r)
 		return
 	}
 
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "error getting tailscale user")
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	memberId, err := s.queries.GetMemberId(r.Context(), email)
-	if err != nil && memberId == 0 {
-		if err := s.queries.CreateMember(r.Context(), email); err != nil {
-			s.logger.Debug(err.Error())
-			s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-			return
+	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	threads, err := s.queries.ListThreads(r.Context(), memberID)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	threadsParsed := make([]ThreadTemplateData, len(threads))
+	for i, thread := range threads {
+		threadsParsed[i] = ThreadTemplateData{
+			ThreadID:       thread.ThreadID,
+			DateLastPosted: thread.DateLastPosted,
+			ID:             thread.ID,
+			Email:          thread.Email,
+			Lastid:         thread.Lastid,
+			Lastname:       thread.Lastname,
+			Subject:        parseMarkdownToHTML(thread.Subject, s.logger),
+			Posts:          thread.Posts,
+			Views:          thread.Views,
+			Body:           pgtype.Text{},
+			Sticky:         thread.Sticky,
+			Locked:         thread.Locked,
 		}
 	}
 
-	start := time.Now()
-	threads, err := s.queries.ListThreads(r.Context(), memberId)
-	duration := time.Since(start).Seconds()
-	listThreadsQueryDuration.WithLabelValues("ListThreads").Observe(duration)
-	if err != nil {
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-		return
-	}
-
-	s.logger.DebugContext(r.Context(), "index fetch", "route", r.URL.Path, "rows", len(threads))
-	if err := s.tmpls.ExecuteTemplate(w, "index.html", struct {
-		Title   string
-		Threads []ListThreadsRow
-		Version string
-		GitSha  string
-	}{
-		Version: s.version,
-		GitSha:  s.gitSha,
-		Title:   "tdiscuss - A Discussion Board for your Tailnet",
-		Threads: threads,
-	}); err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
-		return
-	}
+	s.renderTemplate(w, r, "index.html", map[string]interface{}{
+		"Title":   "tdiscuss - A Discussion Board for your Tailnet",
+		"Threads": threadsParsed,
+		"Version": s.version,
+		"GitSha":  s.gitSha,
+	})
 }
 
+// ThreadNew displays the page for creating a new thread.
 func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" {
+	if r.URL.Path != "/thread/new" || r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	email, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.queries.CreateOrReturnID(r.Context(), email)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
+		"User":    email,
+		"Title":   "New thread!",
+		"Version": s.version,
+		"GitSha":  s.gitSha,
+	})
+}
+
+// ListThreadPosts displays the posts in a specific thread.
+func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request) {
+	threadID, err := parseThreadID(r.URL.Path)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
+		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 
-	whois, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-	}
-
-	if err := s.tmpls.ExecuteTemplate(w, "newthread.html", struct {
-		User    string
-		Title   string
-		Version string
-		GitSha  string
-	}{
-		User:    whois.UserProfile.LoginName,
-		Title:   "New thread!",
-		Version: s.version,
-		GitSha:  s.gitSha,
-	}); err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
-}
 
-func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request) {
-	var tpd ThreadPostData
-	threadID, err := ParseThreadID(r.URL.Path)
+	_, err = s.queries.CreateOrReturnID(r.Context(), email)
 	if err != nil {
-		http.NotFound(w, r)
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-
-	tpd.ID = threadID
 
 	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
 	if err != nil {
 		s.logger.Error(err.Error())
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
+		s.renderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
 		return
 	}
 
-	tpd.Subject = subject
-
-	if r.Method != http.MethodGet {
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusMethodNotAllowed)), http.StatusMethodNotAllowed)
-		return
-	}
-
-	email, err := s.GetTailscaleUserEmail(r)
+	posts, err := s.queries.ListThreadPosts(r.Context(), threadID)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "error getting tailscale user")
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	start := time.Now()
-	memberId, err := s.queries.GetMemberId(r.Context(), email)
-	duration := time.Since(start).Seconds()
-	getMemberIDQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
-	if err != nil {
-		s.logger.Error(err.Error())
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-		return
-	}
-
-	if memberId == 0 {
-		if err := s.queries.CreateMember(r.Context(), email); err != nil {
-			s.logger.Error(err.Error())
-			s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-			return
+	threadPosts := make([]ThreadPostTemplateData, len(posts))
+	for i, post := range posts {
+		threadPosts[i] = ThreadPostTemplateData{
+			ID:         post.ID,
+			DatePosted: post.DatePosted,
+			MemberID:   post.MemberID,
+			Body:       parseMarkdownToHTML(post.Body.String, s.logger),
+			ThreadID:   post.ThreadID,
+			IsAdmin:    post.IsAdmin,
+			Email:      post.Email,
+			Subject:    post.Subject,
 		}
 	}
 
-	start = time.Now()
-	threadPosts, err := s.queries.ListThreadPosts(r.Context(), threadID)
-	duration = time.Since(start).Seconds()
-	listThreadPostsQueryDuration.WithLabelValues("ListThreadPosts").Observe(duration)
-	if err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-		return
-	}
+	s.logger.Info("body", slog.String("body", string(threadPosts[0].Body)))
 
-	tpd.ThreadPosts = threadPosts
-
-	s.logger.DebugContext(r.Context(), "index fetch", "route", r.URL.Path, "rows", len(threadPosts))
-	if err := s.tmpls.ExecuteTemplate(w, "thread.html", struct {
-		Version string
-		GitSha  string
-		Title   string
-		TPD     ThreadPostData
-	}{
-		Version: s.version,
-		GitSha:  s.gitSha,
-		Title:   "tdiscuss - A Discussion Board for your Tailnet",
-		TPD:     tpd,
-	}); err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
-		return
-	}
+	s.renderTemplate(w, r, "thread.html", map[string]interface{}{
+		"Title":       "tdiscuss...",
+		"ThreadPosts": threadPosts,
+		"Subject":     parseMarkdownToHTML(subject, s.logger),
+		"ID":          threadID,
+		"gitSha":      s.gitSha,
+		"version":     s.version,
+	})
 }
 
+// CreateThread handles the creation of a new thread.
 func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" {
-		s.handleError(w, r, "invalid path", http.StatusNotFound)
+	if r.URL.Path != "/thread/new" || r.Method != http.MethodPost {
+		s.renderError(w, r, fmt.Errorf("invalid path or method"), http.StatusMethodNotAllowed)
 		return
 	}
 
-	if r.Method != "POST" {
-		s.handleError(w, r, "invalid method", http.StatusMethodNotAllowed, slog.String("method", r.Method))
-		return
-	}
-
-	if err := r.ParseForm(); err != nil {
-		s.handleError(w, r, "error parsing form", http.StatusBadRequest, slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
-		return
-	}
-
-	if !r.Form.Has("subject") || !r.Form.Has("thread_body") {
-		s.handleError(w, r, "missing required fields", http.StatusBadRequest, slog.String("ip", r.RemoteAddr))
+	if err := r.ParseForm(); err != nil || !r.Form.Has("subject") || !r.Form.Has("thread_body") {
+		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
 		return
 	}
 
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
-		s.handleError(w, r, "error getting user email", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	start := time.Now()
-	memberId, err := s.queries.GetMemberId(r.Context(), email)
-	duration := time.Since(start).Seconds()
-	getMemberIDQueryDuration.WithLabelValues("CreateThread").Observe(duration)
+	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
 	if err != nil {
-		s.handleError(w, r, "error fetching member ID", http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	threadTx, err := s.dbconn.Begin(r.Context())
+	tx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
-		s.handleError(w, r, "error beginning transaction", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
-	defer threadTx.Rollback(r.Context()) // Ensure rollback if anything fails
+	defer tx.Rollback(r.Context())
 
-	qtx1 := s.queries.WithTx(threadTx)
-	err = qtx1.CreateThread(r.Context(), CreateThreadParams{
+	qtx := s.queries.WithTx(tx)
+
+	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
 		Subject:      template.HTMLEscapeString(r.Form.Get("subject")),
-		MemberID:     memberId,
-		LastMemberID: memberId,
-	})
+		MemberID:     memberID,
+		LastMemberID: memberID,
+	}); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	threadID, err := qtx.GetThreadSequenceId(r.Context())
 	if err != nil {
-		s.handleError(w, r, "error creating thread", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	threadId, err := qtx1.GetThreadSequenceId(r.Context())
+	processedBody, err := processThreadBody(r.Form.Get("thread_body"), s.logger)
 	if err != nil {
-		s.handleError(w, r, "error fetching thread ID", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	var body pgtype.Text
-	if err := body.Scan(r.Form.Get("thread_body")); err != nil {
-		s.handleError(w, r, "error scanning thread body", http.StatusInternalServerError)
+	if err := qtx.CreateThreadPost(r.Context(), CreateThreadPostParams{
+		ThreadID: threadID,
+		Body:     processedBody,
+		MemberID: memberID,
+	}); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	err = qtx1.CreateThreadPost(r.Context(), CreateThreadPostParams{
-		ThreadID: threadId,
-		Body:     body,
-		MemberID: memberId,
-	})
-	if err != nil {
-		s.handleError(w, r, "error creating thread post", http.StatusInternalServerError)
+	if err := tx.Commit(r.Context()); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	if err := threadTx.Commit(r.Context()); err != nil {
-		s.handleError(w, r, "error committing transaction", http.StatusInternalServerError)
-		return
-	}
-
-	s.logger.DebugContext(r.Context(), "thread created", slog.Int64("threadId", threadId))
-
-	var scheme string = "http"
-	var hostname string = *hostname
-
-	// Check if we are serving via https
-	if r.TLS != nil {
-		certDomain, ok := s.tailClient.ExpandSNIName(r.Context(), hostname)
-		if !ok {
-			s.handleError(w, r, "can not expand SNI name", http.StatusInternalServerError)
-			return
-		}
-
-		scheme = "https"
-		hostname = certDomain
-	}
-
-	if r.Host != hostname {
-		s.handleError(w, r, "invalid redirect hostname", http.StatusInternalServerError, slog.String("hostname", hostname), slog.String("r.Host", r.Host))
-		return
-	}
-
-	// Secure redirect with a fixed scheme and host to avoid open redirect vulnerabilities
-	safeRedirectURL := fmt.Sprintf("%s://%s/thread/%d", scheme, hostname, threadId)
-	http.Redirect(w, r, safeRedirectURL, http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
+// CreateThreadPost handles adding a new post to an existing thread.
 func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		s.handleError(w, r, "invalid method", http.StatusMethodNotAllowed)
+	if r.Method != http.MethodPost {
+		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
 
-	threadID, err := ParseThreadID(r.URL.Path)
+	threadID, err := parseThreadID(r.URL.Path)
 	if err != nil {
-		s.handleError(w, r, "invalid thread ID", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	if err := r.ParseForm(); err != nil {
-		s.logger.DebugContext(r.Context(), "error parsing form", slog.String("content-type", r.Header.Get("Content-Type")), slog.String("ip", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
-		return
-	}
-
-	threadBody := r.Form.Get("thread_body")
-	if threadBody == "" {
-		s.logger.DebugContext(r.Context(), "missing thread_body", slog.String("ip", r.RemoteAddr))
-		s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusBadRequest)), http.StatusBadRequest)
+	if err := r.ParseForm(); err != nil || r.Form.Get("thread_body") == "" {
+		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
 		return
 	}
 
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
-		s.handleError(w, r, "error getting user email", http.StatusInternalServerError)
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	memberId, err := s.queries.GetMemberId(r.Context(), email)
+	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
 	if err != nil {
-		s.handleError(w, r, "error fetching member ID", http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	var body pgtype.Text
-	if err := body.Scan(threadBody); err != nil {
-		s.handleError(w, r, "error scanning thread body", http.StatusInternalServerError)
+	processedBody, err := processThreadBody(r.Form.Get("thread_body"), s.logger)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	err = s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
-		Body:     body,
-		MemberID: memberId,
+	if err := s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadID,
-	})
-	if err != nil {
-		s.handleError(w, r, "error creating thread post", http.StatusInternalServerError)
-		return
-	}
-
-	// Fixed URL redirect to prevent open redirect vulnerability
-	safeRedirectURL := "/"
-	http.Redirect(w, r, safeRedirectURL, http.StatusSeeOther)
-}
-
-// handleError is a helper function to log and respond with an error message.
-func (s *DiscussService) handleError(w http.ResponseWriter, r *http.Request, logMessage string, statusCode int, extraFields ...any) {
-	s.logger.DebugContext(r.Context(), logMessage, extraFields...)
-	s.RenderError(w, r, fmt.Errorf("%v", http.StatusText(statusCode)), statusCode)
-}
-
-func (s *DiscussService) RenderError(w http.ResponseWriter, r *http.Request, err error, code int) {
-	s.logger.DebugContext(r.Context(), "rendering error", "error", err.Error())
-	if err := s.tmpls.ExecuteTemplate(w, "error.html", struct {
-		Error string
-	}{
-		err.Error(),
+		Body:     processedBody,
+		MemberID: memberID,
 	}); err != nil {
-		s.logger.DebugContext(r.Context(), err.Error())
+		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
+}
+
+func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data map[string]interface{}) {
+	if err := s.tmpls.ExecuteTemplate(w, tmpl, data); err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, "Failed to render template", http.StatusInternalServerError)
 	}
 }
 
-func ParseThreadID(path string) (int64, error) {
-	re := regexp.MustCompile(`^/thread/([0-9]+)$`)
-	matches := re.FindStringSubmatch(path)
-
-	if len(matches) < 2 {
-		return 0, fmt.Errorf("URL does not match the expected pattern")
-	}
-
-	id, err := strconv.ParseInt(matches[1], 0, 64)
-	if err != nil {
-		return 0, fmt.Errorf("error converting ID to integer: %w", err)
-	}
-
-	return id, nil
+func (s *DiscussService) renderError(w http.ResponseWriter, r *http.Request, err error, statusCode int) {
+	s.logger.ErrorContext(r.Context(), err.Error())
+	http.Error(w, http.StatusText(statusCode), statusCode)
 }

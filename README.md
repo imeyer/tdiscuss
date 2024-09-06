@@ -7,7 +7,9 @@ Why not? Who doesn't want a discussion board for their tailnet? Honestly, I've o
 
 ## Building
 
-1. `go build -ldflags "-X main.version=0.0.1 -X main.gitSha=$(git rev-parse --short HEAD)" -o tdiscuss cmd/tdiscuss/main.go`
+Install [bazelisk](https://github.com/bazelbuild/bazelisk), then see what platforms exist to build for: `bazelisk query //...` .. any of the `:tdiscuss-{linux,darwin}-{amd,arm}64` are targets.
+
+1. `bazelisk build --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-linux-amd64`
 
 ## Running
 
