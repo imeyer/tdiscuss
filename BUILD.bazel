@@ -50,6 +50,7 @@ go_library(
         "@com_tailscale//client/tailscale",
         "@com_tailscale//hostinfo",
         "@com_tailscale//tsnet",
+        "@com_github_microcosm_cc_bluemonday//:bluemonday",
     ],
 )
 

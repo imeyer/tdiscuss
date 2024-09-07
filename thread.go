@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/microcosm-cc/bluemonday"
 )
 
 // Struct for template data rendering
@@ -76,7 +77,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 			Email:          thread.Email,
 			Lastid:         thread.Lastid,
 			Lastname:       thread.Lastname,
-			Subject:        parseMarkdownToHTML(thread.Subject, s.logger),
+			Subject:        template.HTML(parseMarkdownToHTML(thread.Subject, s.logger)),
 			Posts:          thread.Posts,
 			Views:          thread.Views,
 			Body:           pgtype.Text{},
@@ -160,17 +161,20 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Strip all HTML from the Subject
+	p := bluemonday.StrictPolicy()
+
 	threadPosts := make([]ThreadPostTemplateData, len(posts))
 	for i, post := range posts {
 		threadPosts[i] = ThreadPostTemplateData{
 			ID:         post.ID,
 			DatePosted: post.DatePosted,
 			MemberID:   post.MemberID,
-			Body:       parseMarkdownToHTML(post.Body.String, s.logger),
+			Body:       template.HTML(parseMarkdownToHTML(post.Body.String, s.logger)),
 			ThreadID:   post.ThreadID,
 			IsAdmin:    post.IsAdmin,
 			Email:      post.Email,
-			Subject:    post.Subject,
+			Subject:    pgtype.Text{},
 		}
 	}
 
@@ -179,10 +183,10 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	s.renderTemplate(w, r, "thread.html", map[string]interface{}{
 		"Title":       "tdiscuss...",
 		"ThreadPosts": threadPosts,
-		"Subject":     parseMarkdownToHTML(subject, s.logger),
+		"Subject":     p.Sanitize(parseMarkdownToHTML(subject, s.logger)),
 		"ID":          threadID,
-		"gitSha":      s.gitSha,
-		"version":     s.version,
+		"GitSha":      s.gitSha,
+		"Version":     s.version,
 	})
 }
 
@@ -220,8 +224,10 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	qtx := s.queries.WithTx(tx)
 
+	p := bluemonday.StrictPolicy()
+
 	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
-		Subject:      template.HTMLEscapeString(r.Form.Get("subject")),
+		Subject:      p.Sanitize(r.Form.Get("subject")),
 		MemberID:     memberID,
 		LastMemberID: memberID,
 	}); err != nil {

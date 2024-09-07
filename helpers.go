@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/microcosm-cc/bluemonday"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
@@ -112,7 +113,7 @@ func newLogger(logLevel *slog.Level) *slog.Logger {
 	return logger
 }
 
-func parseMarkdownToHTML(markdownText string, logger *slog.Logger) template.HTML {
+func parseMarkdownToHTML(markdownText string, logger *slog.Logger) string {
 	var buf bytes.Buffer
 	md := goldmark.New(
 		goldmark.WithExtensions(
@@ -125,10 +126,17 @@ func parseMarkdownToHTML(markdownText string, logger *slog.Logger) template.HTML
 	)
 	if err := md.Convert([]byte(markdownText), &buf); err != nil {
 		logger.Error("couldn't convert markdown", slog.String("error", err.Error()))
-		return template.HTML(markdownText) // Fall back to the original text on error
+		return markdownText // Fall back to the original text on error
 	}
 	logger.Debug("converted markdown", slog.String("renderedMarkdown", buf.String()))
-	return template.HTML(buf.String())
+
+	p := bluemonday.UGCPolicy()
+
+	// Sanitize the HTML
+	sanitizedHTML := p.Sanitize(buf.String())
+
+	logger.Debug("converted and sanitized markdown")
+	return sanitizedHTML
 }
 
 func parseThreadID(path string) (int64, error) {
@@ -141,8 +149,11 @@ func parseThreadID(path string) (int64, error) {
 }
 
 func processThreadBody(body string, logger *slog.Logger) (pgtype.Text, error) {
+	p := bluemonday.UGCPolicy()
+
 	htmlContent := parseMarkdownToHTML(body, logger)
-	pgText := pgtype.Text{String: string(htmlContent), Valid: true}
+
+	pgText := pgtype.Text{String: p.Sanitize(htmlContent), Valid: true}
 	return pgText, nil
 }
 
