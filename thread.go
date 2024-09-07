@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/microcosm-cc/bluemonday"
 )
 
 // Struct for template data rendering
@@ -38,6 +37,123 @@ type ThreadTemplateData struct {
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
 	Legendary      bool
+}
+
+// CreateThread handles the creation of a new thread.
+func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/thread/new" || r.Method != http.MethodPost {
+		s.renderError(w, r, fmt.Errorf("invalid path or method"), http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil || !r.Form.Has("subject") || !r.Form.Has("thread_body") {
+		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		return
+	}
+
+	subject := parseHTMLStrict(parseMarkdownToHTML(r.Form.Get("subject")))
+	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
+
+	email, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := s.dbconn.Begin(r.Context())
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	qtx := s.queries.WithTx(tx)
+
+	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
+		Subject:      subject,
+		MemberID:     memberID,
+		LastMemberID: memberID,
+	}); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	threadID, err := qtx.GetThreadSequenceId(r.Context())
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := qtx.CreateThreadPost(r.Context(), CreateThreadPostParams{
+		ThreadID: threadID,
+		Body:     pgtype.Text{Valid: true, String: body},
+		MemberID: memberID,
+	}); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
+}
+
+// CreateThreadPost handles adding a new post to an existing thread.
+func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+		return
+	}
+
+	threadID, err := parseThreadID(r.URL.Path)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil || r.Form.Get("thread_body") == "" {
+		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		return
+	}
+
+	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
+
+	email, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
+		ThreadID: threadID,
+		Body: pgtype.Text{
+			Valid:  true,
+			String: body,
+		},
+		MemberID: memberID,
+	}); err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
 // ListThreads displays the list of threads on the main page.
@@ -77,7 +193,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 			Email:          thread.Email,
 			Lastid:         thread.Lastid,
 			Lastname:       thread.Lastname,
-			Subject:        template.HTML(parseMarkdownToHTML(thread.Subject, s.logger)),
+			Subject:        template.HTML(parseHTMLStrict(parseMarkdownToHTML(thread.Subject))),
 			Posts:          thread.Posts,
 			Views:          thread.Views,
 			Body:           pgtype.Text{},
@@ -89,34 +205,6 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, r, "index.html", map[string]interface{}{
 		"Title":   "tdiscuss - A Discussion Board for your Tailnet",
 		"Threads": threadsParsed,
-		"Version": s.version,
-		"GitSha":  s.gitSha,
-	})
-}
-
-// ThreadNew displays the page for creating a new thread.
-func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" || r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
-
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	_, err = s.queries.CreateOrReturnID(r.Context(), email)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
-		"User":    email,
-		"Title":   "New thread!",
 		"Version": s.version,
 		"GitSha":  s.gitSha,
 	})
@@ -155,22 +243,22 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	subject = parseMarkdownToHTML(parseHTMLStrict(subject))
+
 	posts, err := s.queries.ListThreadPosts(r.Context(), threadID)
 	if err != nil {
 		s.renderError(w, r, err, http.StatusInternalServerError)
 		return
 	}
 
-	// Strip all HTML from the Subject
-	p := bluemonday.StrictPolicy()
-
 	threadPosts := make([]ThreadPostTemplateData, len(posts))
 	for i, post := range posts {
+		body := template.HTML(parseMarkdownToHTML(parseHTMLLessStrict(post.Body.String)))
 		threadPosts[i] = ThreadPostTemplateData{
 			ID:         post.ID,
 			DatePosted: post.DatePosted,
 			MemberID:   post.MemberID,
-			Body:       template.HTML(parseMarkdownToHTML(post.Body.String, s.logger)),
+			Body:       body,
 			ThreadID:   post.ThreadID,
 			IsAdmin:    post.IsAdmin,
 			Email:      post.Email,
@@ -183,134 +271,11 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	s.renderTemplate(w, r, "thread.html", map[string]interface{}{
 		"Title":       "tdiscuss...",
 		"ThreadPosts": threadPosts,
-		"Subject":     p.Sanitize(parseMarkdownToHTML(subject, s.logger)),
+		"Subject":     template.HTML(subject),
 		"ID":          threadID,
 		"GitSha":      s.gitSha,
 		"Version":     s.version,
 	})
-}
-
-// CreateThread handles the creation of a new thread.
-func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" || r.Method != http.MethodPost {
-		s.renderError(w, r, fmt.Errorf("invalid path or method"), http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil || !r.Form.Has("subject") || !r.Form.Has("thread_body") {
-		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
-		return
-	}
-
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	tx, err := s.dbconn.Begin(r.Context())
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-	defer tx.Rollback(r.Context())
-
-	qtx := s.queries.WithTx(tx)
-
-	p := bluemonday.StrictPolicy()
-
-	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
-		Subject:      p.Sanitize(r.Form.Get("subject")),
-		MemberID:     memberID,
-		LastMemberID: memberID,
-	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	threadID, err := qtx.GetThreadSequenceId(r.Context())
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	processedBody, err := processThreadBody(r.Form.Get("thread_body"), s.logger)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	if err := qtx.CreateThreadPost(r.Context(), CreateThreadPostParams{
-		ThreadID: threadID,
-		Body:     processedBody,
-		MemberID: memberID,
-	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	if err := tx.Commit(r.Context()); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
-}
-
-// CreateThreadPost handles adding a new post to an existing thread.
-func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
-		return
-	}
-
-	threadID, err := parseThreadID(r.URL.Path)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	if err := r.ParseForm(); err != nil || r.Form.Get("thread_body") == "" {
-		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
-		return
-	}
-
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	processedBody, err := processThreadBody(r.Form.Get("thread_body"), s.logger)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
-		ThreadID: threadID,
-		Body:     processedBody,
-		MemberID: memberID,
-	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
 func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data map[string]interface{}) {
@@ -323,4 +288,32 @@ func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, 
 func (s *DiscussService) renderError(w http.ResponseWriter, r *http.Request, err error, statusCode int) {
 	s.logger.ErrorContext(r.Context(), err.Error())
 	http.Error(w, http.StatusText(statusCode), statusCode)
+}
+
+// ThreadNew displays the page for creating a new thread.
+func (s *DiscussService) ThreadNew(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/thread/new" || r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	email, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	_, err = s.queries.CreateOrReturnID(r.Context(), email)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		http.Error(w, string(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
+		"User":    email,
+		"Title":   "New thread!",
+		"Version": s.version,
+		"GitSha":  s.gitSha,
+	})
 }

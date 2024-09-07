@@ -17,6 +17,9 @@ import (
 //go:embed tmpl/*.html
 var templateFiles embed.FS
 
+//go:embed static/style.css
+var cssFile embed.FS
+
 var (
 	hostname            = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
 	dataDir             = flag.String("data-location", dataLocation(), "Configuration data location.")

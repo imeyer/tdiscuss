@@ -64,11 +64,6 @@ th {
     font-weight: 600;
 }
 
-p {
-    margin-top: 0;
-    margin-bottom: 0;
-}
-
 .wide {
     width: 80%;
 }
@@ -103,7 +98,8 @@ p {
 .version {
     font-size: x-small;
     font-family: 'Courier New', Courier, monospace;
-    padding: 2px;   
+    padding: 5px;
+    color: darkgray;
 }
 
 .threadpost-bubble {
