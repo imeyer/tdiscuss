@@ -3,7 +3,7 @@ module github.com/imeyer/tdiscuss
 go 1.23.0
 
 require (
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/yuin/goldmark v1.7.4
 	github.com/yuin/goldmark-emoji v1.0.3
