@@ -1,5 +1,5 @@
 load("@gazelle//:def.bzl", "gazelle")
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 load("helper.bzl", "cross_compile_binary")
 load("platforms.def.bzl", "PLATFORMS")
 
@@ -22,13 +22,13 @@ go_library(
         "parser.go",
         "queries.sql.go",
         "server.go",
-        "thread.go",
     ],
     embedsrcs = [
         "tmpl/error.html",
         "tmpl/footer.html",
         "tmpl/header.html",
         "tmpl/index.html",
+        "tmpl/member.html",
         "tmpl/newthread.html",
         "tmpl/thread.html",
         "static/style.css",
@@ -44,16 +44,17 @@ go_library(
         "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgtype",
         "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_microcosm_cc_bluemonday//:bluemonday",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
         "@com_github_yuin_goldmark//:goldmark",
         "@com_github_yuin_goldmark//extension",
-        "@com_github_yuin_goldmark_emoji//:goldmark-emoji",
         "@com_github_yuin_goldmark//renderer/html",
+        "@com_github_yuin_goldmark_emoji//:goldmark-emoji",
         "@com_tailscale//client/tailscale",
         "@com_tailscale//hostinfo",
         "@com_tailscale//tsnet",
-        "@com_github_microcosm_cc_bluemonday//:bluemonday",
+        "@com_tailscale//types/logger",
     ],
 )
 
@@ -62,3 +63,10 @@ go_library(
     goarch = goarch,
     goos = goos,
 ) for (goos, goarch) in PLATFORMS]
+
+go_test(
+    name = "tdiscuss_parser_test",
+    srcs = ["parser_test.go"],
+    embed = [":tdiscuss_lib"],
+    size = "small",
+)

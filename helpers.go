@@ -3,15 +3,12 @@ package main
 import (
 	"context"
 	"html/template"
-	"io/fs"
 	"log/slog"
-	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"tailscale.com/client/tailscale"
 	"tailscale.com/tsnet"
 )
@@ -98,25 +95,6 @@ func setupLogger() *slog.Logger {
 		logLevel = slog.LevelDebug
 	}
 	return newLogger(&logLevel)
-}
-
-func setupMux(dsvc *DiscussService) http.Handler {
-	fs, err := fs.Sub(cssFile, "static")
-	if err != nil {
-		dsvc.logger.Error("error creating fs for static assets", slog.String("error", err.Error()))
-		return nil
-	}
-
-	tailnetMux := http.NewServeMux()
-	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
-	tailnetMux.HandleFunc("GET /thread/new", dsvc.ThreadNew)
-	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
-	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
-	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
-	tailnetMux.Handle("GET /metrics", promhttp.Handler())
-	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(fs))))
-
-	return HistogramHttpHandler(tailnetMux)
 }
 
 func setupTemplates() *template.Template {

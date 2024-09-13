@@ -1,35 +1,35 @@
-{{ template "header" . }}
+    {{ template "header" . }}
 
-<h2>Top serious throwback... <a href="/thread/new">say something?</a></h2>
-{{ if .Threads }}
-<table class="table-max-w">
-    <colgroup>
-        <col class="col-user" />
-        <col class="col-subject" />
-        <col class="col-posts" />
-        <col class="col-date" />
-    </colgroup>
-    <thead>
-        <tr>
-            <th class="user">user</th>
-            <th>subject</th>
-            <th>posts</th>
-            <th>date</th>
-        </tr>
-    </thead>
-    <tbody>
-        {{ range .Threads }}
-        <tr>
-            <td class="user">{{ .Email.String }}</td>
-            <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
-            <td>{{ .Posts.Int32 }}</td>
-            <td>{{ .DateLastPosted.Time | formatTimestamp }}</td>
-        </tr>
-        {{ end }}
-    </tbody>
-</table>
-{{else}}
-<p>Nothing to see here... <a href="/thread/new">say something!!!</a></p>
-{{end}}
+    <h2><a href="/thread/new">Create new thread...</a></h2>
+    {{ if .Threads }}
+    <table class="table-max-w">
+        <colgroup>
+            <col class="col-user" />
+            <col class="col-subject" />
+            <col class="col-posts" />
+            <col class="col-date" />
+        </colgroup>
+        <thead>
+            <tr>
+                <th class="user">user</th>
+                <th>subject</th>
+                <th>posts</th>
+                <th>date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ range .Threads }}
+            <tr>
+                <td class="user"><a href="/member/{{ .Lastid.Int64 }}">{{ .Email.String }}</a></td>
+                <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
+                <td>{{ .Posts.Int32 }}</td>
+                <td>{{ .DateLastPosted.Time | formatTimestamp }}</td>
+            </tr>
+            {{ end }}
+        </tbody>
+    </table>
+    {{else}}
+    <p>Nothing to see here... <a href="/thread/new">say something!!!</a></p>
+    {{end}}
 
-{{ template "footer" . }}
+    {{ template "footer" . }}

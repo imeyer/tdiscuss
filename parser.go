@@ -45,11 +45,29 @@ func parseHTMLLessStrict(text string) string {
 	return lessStrict.Sanitize(text)
 }
 
+func parseID(path string) (int64, error) {
+	re := regexp.MustCompile(`^/(thread|member)/([0-9]+)$`)
+	matches := re.FindStringSubmatch(path)
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("invalid thread ID in URL")
+	}
+	return strconv.ParseInt(matches[2], 10, 64)
+}
+
 func parseThreadID(path string) (int64, error) {
 	re := regexp.MustCompile(`^/thread/([0-9]+)$`)
 	matches := re.FindStringSubmatch(path)
 	if len(matches) < 2 {
 		return 0, fmt.Errorf("invalid thread ID in URL")
+	}
+	return strconv.ParseInt(matches[1], 10, 64)
+}
+
+func parseMemberID(path string) (int64, error) {
+	re := regexp.MustCompile(`^/member/([0-9]+)$`)
+	matches := re.FindStringSubmatch(path)
+	if len(matches) < 2 {
+		return 0, fmt.Errorf("invalid member ID in URL")
 	}
 	return strconv.ParseInt(matches[1], 10, 64)
 }

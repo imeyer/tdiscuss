@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -12,7 +13,7 @@ var (
 	versionGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "tdiscuss_build_info",
 		Help: "A gauge with version and git commit information",
-	}, []string{"version", "git_commit"})
+	}, []string{"version", "git_commit", "hostname"})
 
 	getMemberIDQueryDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -70,11 +71,15 @@ func HistogramHttpHandler(next http.Handler) http.HandlerFunc {
 		// Create a ResponseWriter that captures the status code
 		rw := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
+		re := regexp.MustCompile(`/(\d+)`)
+
+		sanitizedPath := re.ReplaceAllString(r.URL.Path, "/:id")
+
 		next.ServeHTTP(rw, r)
 
 		duration := time.Since(start).Seconds()
 		// TODO:imeyer Sanitize r.URL.Path to the matched path expression
-		httpRequestDuration.WithLabelValues(r.URL.Path, r.Method, strconv.Itoa(rw.statusCode)).Observe(duration)
+		httpRequestDuration.WithLabelValues(sanitizedPath, r.Method, strconv.Itoa(rw.statusCode)).Observe(duration)
 	})
 }
 

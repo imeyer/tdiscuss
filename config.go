@@ -30,8 +30,18 @@ func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
 	dbConfig.HealthCheckPeriod = defaultHealthCheckPeriod
 	dbConfig.ConnConfig.ConnectTimeout = defaultConnectTimeout
 
+	dbConfig.BeforeConnect = func(ctx context.Context, c *pgx.ConnConfig) error {
+		logger.Debug("creating connection")
+		return nil
+	}
+
+	dbConfig.AfterConnect = func(ctx context.Context, c *pgx.Conn) error {
+		logger.Debug("connection created")
+		return nil
+	}
+
 	dbConfig.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
-		logger.Debug("acquiring connection pool")
+		logger.Debug("acquiring connection pool", slog.Any("config", c.Config()))
 		return true
 	}
 

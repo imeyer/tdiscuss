@@ -16,13 +16,6 @@ type BoardDatum struct {
 	Value string
 }
 
-type Chat struct {
-	ID       int32
-	MemberID int64
-	Stamp    pgtype.Timestamp
-	Chat     pgtype.Text
-}
-
 type Favorite struct {
 	ID       int32
 	MemberID int64
@@ -30,31 +23,20 @@ type Favorite struct {
 }
 
 type Member struct {
-	ID               int64
-	DateJoined       pgtype.Timestamptz
-	DateFirstPost    pgtype.Date
-	Email            string
-	TotalThreads     pgtype.Int4
-	TotalThreadPosts pgtype.Int4
-	LastView         pgtype.Timestamp
-	LastPost         pgtype.Timestamp
-	LastChat         pgtype.Timestamp
-	LastSearch       pgtype.Timestamp
-	Banned           pgtype.Bool
-	IsAdmin          pgtype.Bool
 	Cookie           pgtype.Text
+	DateFirstPost    pgtype.Date
+	DateJoined       pgtype.Timestamptz
+	Email            string
+	ID               int64
+	IsAdmin          pgtype.Bool
+	LastChat         pgtype.Timestamp
+	LastPost         pgtype.Timestamp
+	LastSearch       pgtype.Timestamp
+	LastView         pgtype.Timestamp
+	PhotoUrl         pgtype.Text
 	Session          pgtype.Text
-}
-
-type MemberIgnore struct {
-	MemberID       pgtype.Int8
-	IgnoreMemberID pgtype.Int8
-}
-
-type MemberLurkUnlock struct {
-	ID        int32
-	MemberID  int64
-	CreatedAt pgtype.Date
+	TotalThreadPosts pgtype.Int4
+	TotalThreads     pgtype.Int4
 }
 
 type MemberPref struct {
@@ -125,14 +107,12 @@ type Thread struct {
 	Indexed        bool
 	Edited         bool
 	Deleted        bool
-	Legendary      bool
 }
 
 type ThreadMember struct {
 	MemberID      int64
 	ThreadID      int64
 	Undot         bool
-	Ignore        bool
 	DatePosted    pgtype.Timestamp
 	LastViewPosts int32
 }

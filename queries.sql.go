@@ -56,6 +56,31 @@ func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostPara
 	return err
 }
 
+const getMember = `-- name: GetMember :one
+SELECT email, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1
+`
+
+type GetMemberRow struct {
+	Email         string
+	ID            int64
+	DateJoined    pgtype.Timestamptz
+	DateFirstPost pgtype.Date
+	PhotoUrl      pgtype.Text
+}
+
+func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {
+	row := q.db.QueryRow(ctx, getMember, id)
+	var i GetMemberRow
+	err := row.Scan(
+		&i.Email,
+		&i.ID,
+		&i.DateJoined,
+		&i.DateFirstPost,
+		&i.PhotoUrl,
+	)
+	return i, err
+}
+
 const getMemberId = `-- name: GetMemberId :one
 SELECT id FROM member WHERE email = $1
 `
@@ -98,6 +123,98 @@ func (q *Queries) GetThreadSubjectById(ctx context.Context, id int64) (string, e
 	var subject string
 	err := row.Scan(&subject)
 	return subject, err
+}
+
+const listMemberThreads = `-- name: ListMemberThreads :many
+SELECT
+  t.id as thread_id,
+  t.date_last_posted,
+  m.id,
+  m.email,
+  l.id as lastid,
+  l.email as lastname,
+  t.subject,
+  t.posts,
+  t.views,
+  tp.body,
+  (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
+  (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
+  t.sticky,
+  t.locked
+FROM
+  thread t
+LEFT JOIN
+  member m
+ON
+  m.id=t.member_id
+LEFT JOIN
+  member l
+ON
+  l.id=t.last_member_id
+LEFT JOIN
+  thread_post tp
+ON
+  tp.id=t.first_post_id
+LEFT OUTER JOIN
+  thread_member tm
+ON
+  (tm.member_id=$1 AND tm.thread_id=t.id)
+WHERE t.sticky IS false
+AND m.id=$1
+ORDER BY t.date_last_posted DESC
+LIMIT 10
+`
+
+type ListMemberThreadsRow struct {
+	ThreadID       int64
+	DateLastPosted pgtype.Timestamptz
+	ID             pgtype.Int8
+	Email          pgtype.Text
+	Lastid         pgtype.Int8
+	Lastname       pgtype.Text
+	Subject        string
+	Posts          pgtype.Int4
+	Views          pgtype.Int4
+	Body           pgtype.Text
+	LastViewPosts  interface{}
+	Dot            string
+	Sticky         pgtype.Bool
+	Locked         pgtype.Bool
+}
+
+func (q *Queries) ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
+	rows, err := q.db.Query(ctx, listMemberThreads, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMemberThreadsRow
+	for rows.Next() {
+		var i ListMemberThreadsRow
+		if err := rows.Scan(
+			&i.ThreadID,
+			&i.DateLastPosted,
+			&i.ID,
+			&i.Email,
+			&i.Lastid,
+			&i.Lastname,
+			&i.Subject,
+			&i.Posts,
+			&i.Views,
+			&i.Body,
+			&i.LastViewPosts,
+			&i.Dot,
+			&i.Sticky,
+			&i.Locked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listThreadPosts = `-- name: ListThreadPosts :many
@@ -179,8 +296,7 @@ SELECT
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
   (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
   t.sticky,
-  t.locked,
-  t.legendary
+  t.locked
 FROM
   thread t
 LEFT JOIN
@@ -200,7 +316,6 @@ LEFT OUTER JOIN
 ON
   (tm.member_id=$1 AND tm.thread_id=t.id)
 WHERE t.sticky IS false
-  AND tm.ignore IS NOT TRUE
 ORDER BY t.date_last_posted DESC
 LIMIT 100
 `
@@ -220,7 +335,6 @@ type ListThreadsRow struct {
 	Dot            string
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
-	Legendary      bool
 }
 
 func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThreadsRow, error) {
@@ -247,7 +361,6 @@ func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThread
 			&i.Dot,
 			&i.Sticky,
 			&i.Locked,
-			&i.Legendary,
 		); err != nil {
 			return nil, err
 		}

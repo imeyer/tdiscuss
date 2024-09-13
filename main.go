@@ -14,6 +14,8 @@ import (
 	"tailscale.com/hostinfo"
 )
 
+const BOARD_TITLE string = "tdiscuss - A Discussion Board for your Tailnet"
+
 //go:embed tmpl/*.html
 var templateFiles embed.FS
 
@@ -35,15 +37,16 @@ func main() {
 
 	hostinfo.SetApp("tdiscuss")
 
-	versionGauge.With(prometheus.Labels{"version": version, "git_commit": gitSha}).Set(1)
+	logger := setupLogger()
+	logger.Info("starting tdiscuss", slog.String("version", version), slog.String("git_sha", gitSha))
+
+	versionGauge.With(prometheus.Labels{"version": version, "git_commit": gitSha, "hostname": *hostname}).Set(1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	logger := setupLogger()
 
 	dbconn := setupDatabase(ctx, logger)
 	defer dbconn.Close()

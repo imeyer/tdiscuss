@@ -1,0 +1,57 @@
+{{ template "header" . }}
+
+<table class="profile-table">
+    <tr>
+        <td class="profile-column">
+            <div class="profile-photo">
+                {{ if .Member.PhotoUrl.Valid }}
+                <img src="{{ .Member.PhotoUrl.String }}" />
+                {{ else }}
+                NO PHOTO
+                {{ end }}
+            </div>
+        </td>
+        <td class="info-column">
+            <div class="content-container">
+                <div class="content-row">
+                    Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
+                    First posted: {{ .Member.DateFirstPost.Time }}
+                </div>
+                {{ if .MemberThreads }}
+                <div class="thread-content-row">
+                    <table>
+                        <colgroup>
+                            <col class="thread-col-subject">
+                            <col class="col-date">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>subject</th>
+                                <th>last post</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{ range .MemberThreads }}
+                            <tr>
+                                <td>
+                                    <a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a>
+                                </td>
+                                <td>
+                                    {{ .DateLastPosted.Time | formatTimestamp }}
+                                </td>
+                            </tr>
+                            {{ end }}
+                        </tbody>
+                    </table>
+                </div>
+                {{else}}
+                <div class="content-row">
+                    Nothing posted yet
+                </div>
+                {{end}}
+            </div>
+        </td>
+    </tr>
+</table>
+
+{{ template "footer" . }}
