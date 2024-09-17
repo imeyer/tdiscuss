@@ -23,15 +23,16 @@ TARGET := tdiscuss-$(PLATFORM)-$(ARCH)
 
 # Bazel build command
 BAZEL := bazelisk
-BAZEL_BUILD_ARGS := build --config=silent --stamp --workspace_status_command="$${PWD}/status.sh"
+BAZEL_BUILD_ARGS := build --config=silent --workspace_status_command="$${PWD}/status.sh"
+BAZEL_RELEASE_ARGS := build --config=silent --stamp --workspace_status_command="$${PWD}/status.sh"
 BAZEL_TEST_ARGS := test --config=silent --build_tests_only --test_output=errors
 BAZEL_RUN_ARGS := run
 # Change the hostname to anything you wish to use for testing
-BAZEL_RUN_TRAILING_ARGS := -- -hostname discuss-dev
+BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev
 
 .PHONY: all clean
 
-all: build
+all: test build
 
 build:
 	@echo "Building for $(PLATFORM)-$(ARCH)"
@@ -42,8 +43,16 @@ test:
 	$(BAZEL) $(BAZEL_TEST_ARGS) //...
 
 run:
-	@echo "Running for $(PLATFORM)-$(ARCH)"
-	$(BAZEL) $(BAZEL_RUN_ARGS) //:$(TARGET) $(BAZEL_RUN_TRAILING_ARGS)
+	@echo "Running for $(PLATFORM)-$(ARCH) from $(BAZEL)"
+	$(BAZEL) $(BAZEL_RUN_ARGS) //:$(TARGET) -- $(BAZEL_RUN_TRAILING_ARGS)
+
+run-binary:
+	@echo "Running for $(PLATFORM)-$(ARCH) from $(shell $(BAZEL) info bazel-bin)"
+	$(shell $(BAZEL) info bazel-bin)/$(TARGET)_/$(TARGET) $(BAZEL_RUN_TRAILING_ARGS)
+
+release:
+	@echo "Building release for $(PLATFORM)-$(ARCH)"
+	$(BAZEL) $(BAZEL_RELEASE_ARGS) //:$(TARGET)
 
 clean:
 	$(BAZEL) clean
