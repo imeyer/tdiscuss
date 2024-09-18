@@ -361,6 +361,17 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
+func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
+	user, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	if err != nil {
+		s.logger.Debug("get tailscale user email", slog.String("error", err.Error()))
+		return "", err
+	}
+
+	s.logger.Debug("get tailscale user email", slog.String("user", user.UserProfile.LoginName))
+	return user.UserProfile.LoginName, nil
+}
+
 // ListThreads displays the list of threads on the main page.
 func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" || r.Method != http.MethodGet {
@@ -553,7 +564,7 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
 		"User":    email,
-		"Title":   BOARD_TITLE	,
+		"Title":   BOARD_TITLE,
 		"Version": s.version,
 		"GitSha":  s.gitSha,
 	})
