@@ -16,7 +16,6 @@ go_library(
         "db.go",
         "helpers.go",
         "main.go",
-        "member.go",
         "metrics.go",
         "models.go",
         "parser.go",
