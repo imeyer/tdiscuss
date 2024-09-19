@@ -111,11 +111,6 @@ tbody>tr:nth-child(odd) {
     background-color: var(--odd-row-color);
 }
 
-/* Column styles */
-.wide {
-    width: 80%;
-}
-
 .col-subject,
 .thread-col-subject {
     width: max(200px, calc(100vw - 680px));
@@ -144,35 +139,11 @@ tbody>tr:nth-child(odd) {
     max-width: 1000px;
 }
 
-.table-max-w .col-200 {
+.table-max-w {
     width: clamp(200px, calc(100vw - 680px), 520px);
 }
 
 /* Profile styles */
-.profile {
-    width: 100%;
-    border: var(--border);
-    border-radius: 10px;
-    margin: 0;
-}
-
-.profile-photo {
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    border: 2px solid var(--primary-color);
-    background-color: var(--primary-color);
-    margin: 20px auto;
-}
-
-.profile-photo img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 50%;
-}
-
-/* Profile table styles */
 .profile-table {
     width: 100%;
     border-collapse: separate;
@@ -192,6 +163,22 @@ tbody>tr:nth-child(odd) {
     background-color: var(--primary-color);
     padding: 20px;
     box-sizing: border-box;
+}
+
+.profile-photo {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    border: 2px solid var(--primary-color);
+    background-color: var(--primary-color);
+    margin: 20px auto;
+}
+
+.profile-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
 }
 
 .user {
@@ -308,7 +295,6 @@ tbody>tr:nth-child(odd) {
 
 /* Media queries */
 @media (max-width: 768px) {
-
     .profile-table,
     .profile-table tbody,
     .profile-table tr,
@@ -317,21 +303,52 @@ tbody>tr:nth-child(odd) {
         display: block;
         width: 100%;
     }
+
+    /* Hide specific columns */
+    .col-posts,
+    .col-date,
+    .thread-col-user {
+        display: none;
+    }
+
+    /* Adjust remaining columns */
+    .col-user,
+    .col-subject,
+    .thread-col-subject {
+        width: 100%;
+    }
+
+    /* Make table header sticky */
+    thead {
+        position: sticky;
+        top: 0;
+        background-color: var(--header-color);
+        z-index: 2;
+    }
+
+    /* Adjust table layout for mobile */
+    table, tbody, tr, td {
+        display: table;
+    }
+
+    td {
+        text-align: left !important;
+        padding: 10px 5px;
+    }
+
+    td:before {
+        float: left;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .user {
+        text-align: left;
+        padding-left: 5px;
+    }
 }
 
 @media (max-width: 600px) {
-    .chat-bubble {
-        padding: 8px;
-    }
-
-    .chat-header {
-        font-size: 0.8em;
-    }
-
-    .chat-message {
-        font-size: 0.9em;
-    }
-
     .form-container {
         padding: 15px;
     }

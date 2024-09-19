@@ -1,0 +1,32 @@
+{{ define "index-thread-partial" }}
+{{ if .Threads }}
+<table class="table-max-w">
+    <colgroup>
+        <col class="col-user" />
+        <col class="col-subject" />
+        <col class="col-posts" />
+        <col class="col-date" />
+    </colgroup>
+    <thead>
+        <tr>
+            <th class="user">user</th>
+            <th>subject</th>
+            <th class="col-posts">posts</th>
+            <th class="col-date">date</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range .Threads }}
+        <tr>
+            <td class="user"><a href="/member/{{ .Lastid.Int64 }}">{{ .Email.String }}</a></td>
+            <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
+            <td class="col-posts">{{ .Posts.Int32 }}</td>
+            <td class="col-date">{{ .DateLastPosted.Time | formatTimestamp }}</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{else}}
+<p>No threads...</p>
+{{ end }}
+{{ end }}

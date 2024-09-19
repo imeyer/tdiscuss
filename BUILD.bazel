@@ -26,6 +26,7 @@ go_library(
         "tmpl/error.html",
         "tmpl/footer.html",
         "tmpl/header.html",
+        "tmpl/index-thread-partial.html",
         "tmpl/index.html",
         "tmpl/member.html",
         "tmpl/newthread.html",
