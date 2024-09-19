@@ -522,11 +522,11 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
-		"Title":         BOARD_TITLE,
-		"Member":        member,
-		"MemberThreads": memberThreads,
-		"GitSha":        s.gitSha,
-		"Version":       s.version,
+		"Title":   BOARD_TITLE,
+		"Member":  member,
+		"Threads": memberThreads,
+		"GitSha":  s.gitSha,
+		"Version": s.version,
 	})
 }
 

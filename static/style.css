@@ -2,105 +2,247 @@
 :root {
     /* Common variables */
     --border: 1px solid grey;
-    --primary-color: #FFA1C6;
 
     /* Light mode variables */
     --background-color-light: #dfdfdf;
+    --content-bg-light: #f9f9f9;
     --even-row-color-light: #CCC;
-    --odd-row-color-light: #DDD;
+    --form-bg-light: #ddd;
     --header-color-light: #efefef;
+    --odd-row-color-light: #DDD;
+    --primary-color-light: #d4306e;
     --text-color-light: #333;
     --text-color-secondary-light: #555;
-    --form-bg-light: #ddd;
-    --content-bg-light: #f9f9f9;
     --threadpost-bg-light: #fff;
 
     /* Dark mode variables */
     --background-color-dark: #222;
+    --content-bg-dark: #2c2c2c;
     --even-row-color-dark: #444;
-    --odd-row-color-dark: #333;
+    --form-bg-dark: #333;
     --header-color-dark: #2c2c2c;
+    --odd-row-color-dark: #333;
+    --primary-color-dark: #ff9eca;
     --text-color-dark: #e0e0e0;
     --text-color-secondary-dark: #b0b0b0;
-    --form-bg-dark: #333;
-    --content-bg-dark: #2c2c2c;
     --threadpost-bg-dark: #333;
 
     /* Default to light mode */
     --background-color: var(--background-color-light);
+    --content-bg: var(--content-bg-light);
     --even-row-color: var(--even-row-color-light);
-    --odd-row-color: var(--odd-row-color-light);
+    --form-bg: var(--form-bg-light);
     --header-color: var(--header-color-light);
+    --odd-row-color: var(--odd-row-color-light);
+    --primary-color: var(--primary-color-light);
     --text-color: var(--text-color-light);
     --text-color-secondary: var(--text-color-secondary-light);
-    --form-bg: var(--form-bg-light);
-    --content-bg: var(--content-bg-light);
     --threadpost-bg: var(--threadpost-bg-light);
 }
 
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --background-color: var(--background-color-dark);
-        --even-row-color: var(--even-row-color-dark);
-        --odd-row-color: var(--odd-row-color-dark);
-        --header-color: var(--header-color-dark);
-        --text-color: var(--text-color-dark);
-        --text-color-secondary: var(--text-color-secondary-dark);
-        --form-bg: var(--form-bg-dark);
-        --content-bg: var(--content-bg-dark);
-        --threadpost-bg: var(--threadpost-bg-dark);
-    }
-}
-
-/* Base styles */
-body {
-    font-family: Verdana, Geneva, Tahoma, sans-serif;
-    font-size: 100%;
-    background-color: var(--background-color);
-    color: var(--text-color);
-    margin: 0;
-    padding: 20px;
-}
-
+/* Element Selectors */
 a {
     color: var(--primary-color);
 }
 
-/* Table styles */
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+    font-size: 100%;
+    margin: 0;
+    padding: 20px;
+}
+
 table {
-    width: 100%;
-    table-layout: fixed;
-    margin: 0 auto;
+    border: var(--border);
+    border-collapse: separate;
     border-radius: 10px;
     border-spacing: 0;
-    border-collapse: separate;
-    border: var(--border);
+    margin: 0 auto;
     overflow: hidden;
+    table-layout: fixed;
+    width: 100%;
 }
 
-table>*>tr:not(:last-child)>*,
-table>*:not(:last-child) {
-    border-bottom: var(--border);
-}
-
-th,
-td {
+td,
+th {
     padding: 5px;
     vertical-align: top;
 }
 
-th,
-td:first-child {
-    position: sticky;
-    left: 0;
-    z-index: 1;
-}
-
 th {
     background-color: var(--header-color);
-    text-align: left;
     font-weight: 600;
+    text-align: left;
+}
+
+/* Class Selectors */
+.col-date {
+    width: 170px;
+}
+
+.col-posts {
+    width: 80px;
+}
+
+.col-subject,
+.thread-col-subject {
+    width: max(200px, calc(100vw - 680px));
+}
+
+.col-user {
+    text-align: right;
+    width: 220px;
+}
+
+.content-container {
+    box-sizing: border-box;
+    padding: 10px;
+    width: 100%;
+}
+
+.content-row {
+    background-color: var(--content-bg);
+    border: 1px solid var(--text-color-secondary);
+    margin-bottom: 10px;
+    padding: 10px;
+}
+
+.form-container {
+    background-color: var(--form-bg);
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    max-width: fit-content;
+    padding: 20px;
+    width: 100%;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group button {
+    background-color: var(--primary-color);
+    border: none;
+    border-radius: 5px;
+    color: white;
+    cursor: pointer;
+    font-size: 1em;
+    padding: 10px;
+    width: 25%;
+}
+
+.form-group button:hover {
+    background-color: #b02758;
+}
+
+.form-group input,
+.form-group textarea {
+    background-color: var(--background-color);
+    border: 1px solid var(--text-color-secondary);
+    border-radius: 5px;
+    box-sizing: border-box;
+    color: var(--text-color);
+    font-size: 0.9em;
+    padding: 10px;
+    resize: none;
+    width: 100%;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 5px rgba(184, 92, 166, 0.5);
+    outline: none;
+}
+
+.form-group label {
+    color: var(--text-color-secondary);
+    display: block;
+    margin-bottom: 5px;
+}
+
+.info-column {
+    padding: 10px;
+}
+
+.profile-column {
+    background-color: var(--primary-color);
+    box-sizing: border-box;
+    padding: 20px;
+    width: 200px;
+}
+
+.profile-photo {
+    background-color: var(--primary-color);
+    border: 2px solid var(--primary-color);
+    border-radius: 50%;
+    height: 150px;
+    margin: 20px auto;
+    width: 150px;
+}
+
+.profile-photo img {
+    border-radius: 50%;
+    height: 100%;
+    object-fit: cover;
+    width: 100%;
+}
+
+.profile-table {
+    border: var(--border);
+    border-collapse: separate;
+    border-radius: 10px;
+    border-spacing: 0;
+    overflow: hidden;
+    width: 100%;
+}
+
+.table-max-w {
+    max-width: 1000px;
+    width: clamp(200px, calc(100vw - 680px), 520px);
+}
+
+.thread-content-row {
+    margin-bottom: 10px;
+}
+
+.threadpost-body {
+    color: var(--text-color);
+    font-size: 1.1em;
+    width: 100%;
+}
+
+.threadpost-bubble {
+    background-color: var(--threadpost-bg);
+    border-radius: 15px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+    margin: 10px 0;
+    overflow-wrap: break-word;
+    padding: 10px;
+    width: 90%;
+}
+
+.threadpost-header {
+    border-bottom: 1px solid var(--text-color-secondary);
+    color: var(--text-color-secondary);
+    font-size: 1em;
+    margin-bottom: 5px;
+    padding-bottom: 5px;
+    width: 100%;
+}
+
+.version {
+    color: var(--text-color-secondary);
+    font: x-small 'Courier New', Courier, monospace;
+    padding: 5px;
+}
+
+/* Descendant Selectors */
+table>*>tr:not(:last-child)>*,
+table>*:not(:last-child) {
+    border-bottom: var(--border);
 }
 
 tbody>tr:nth-child(even) {
@@ -111,248 +253,88 @@ tbody>tr:nth-child(odd) {
     background-color: var(--odd-row-color);
 }
 
-.col-subject,
-.thread-col-subject {
-    width: max(200px, calc(100vw - 680px));
+/* Media Queries */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background-color: var(--background-color-dark);
+        --content-bg: var(--content-bg-dark);
+        --even-row-color: var(--even-row-color-dark);
+        --form-bg: var(--form-bg-dark);
+        --header-color: var(--header-color-dark);
+        --odd-row-color: var(--odd-row-color-dark);
+        --primary-color: var(--primary-color-dark);
+        --text-color: var(--text-color-dark);
+        --text-color-secondary: var(--text-color-secondary-dark);
+        --threadpost-bg: var(--threadpost-bg-dark);
+    }
+
+    .form-group button:hover {
+        background-color: #ffb8d9;
+    }
 }
 
-.col-user,
-.thread-col-user {
-    width: 220px;
-    text-align: right;
-}
-
-.col-date {
-    width: 170px;
-}
-
-.col-posts {
-    width: 80px;
-}
-
-.thread-col-subject,
-.thread-col-user {
-    padding-left: 10px;
-}
-
-.table-max-w {
-    max-width: 1000px;
-}
-
-.table-max-w {
-    width: clamp(200px, calc(100vw - 680px), 520px);
-}
-
-/* Profile styles */
-.profile-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    border: var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-.profile-table th td {
-    padding: 0 0 0 10px;
-    vertical-align: top;
-}
-
-.profile-column {
-    width: 200px;
-    background-color: var(--primary-color);
-    padding: 20px;
-    box-sizing: border-box;
-}
-
-.profile-photo {
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    border: 2px solid var(--primary-color);
-    background-color: var(--primary-color);
-    margin: 20px auto;
-}
-
-.profile-photo img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 50%;
-}
-
-.user {
-    text-align: right;
-    padding-right: 10px;
-}
-
-.version {
-    font: x-small 'Courier New', Courier, monospace;
-    padding: 5px;
-    color: var(--text-color-secondary);
-}
-
-/* Thread post styles */
-.threadpost-bubble {
-    background-color: var(--threadpost-bg);
-    border-radius: 15px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-    margin: 10px 0;
-    padding: 10px;
-    width: 90%;
-    overflow-wrap: break-word;
-}
-
-.threadpost-header {
-    border-bottom: 1px solid var(--text-color-secondary);
-    width: 100%;
-    padding-bottom: 5px;
-    margin-bottom: 5px;
-    font-size: 1em;
-    color: var(--text-color-secondary);
-}
-
-.threadpost-body {
-    width: 100%;
-    font-size: 1.1em;
-    color: var(--text-color);
-}
-
-/* Form styles */
-.form-container {
-    background-color: var(--form-bg);
-    padding: 20px;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    width: 100%;
-    max-width: fit-content;
-}
-
-.form-group {
-    margin-bottom: 15px;
-}
-
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    color: var(--text-color-secondary);
-}
-
-.form-group textarea {
-    box-sizing: border-box;
-    width: 100%;
-    padding: 10px;
-    border: 1px solid var(--text-color-secondary);
-    border-radius: 5px;
-    font-size: 0.9em;
-    resize: none;
-    color: var(--text-color);
-    background-color: var(--background-color);
-}
-
-.form-group textarea:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 5px rgba(184, 92, 166, 0.5);
-    outline: none;
-}
-
-.form-group button {
-    width: 25%;
-    padding: 10px;
-    background-color: var(--primary-color);
-    border: none;
-    border-radius: 5px;
-    color: white;
-    font-size: 1em;
-    cursor: pointer;
-}
-
-.form-group button:hover {
-    background-color: #bb509b;
-}
-
-.info-column {
-    padding: 10px;
-}
-
-/* Content styles */
-.content-container {
-    width: 100%;
-    padding: 10px;
-    box-sizing: border-box;
-}
-
-.content-row {
-    margin-bottom: 10px;
-    padding: 10px;
-    background-color: var(--content-bg);
-    border: 1px solid var(--text-color-secondary);
-}
-
-.thread-content-row {
-    margin-bottom: 10px;
-}
-
-/* Media queries */
 @media (max-width: 768px) {
+    .col-posts,
+    .col-date {
+        display: none;
+    }
+
+    .col-user {
+        text-align: right;
+        width: 30%;
+    }
+
+    .col-subject,
+    .thread-col-subject {
+        width: 70%;
+    }
+
+    .info-column,
+    .profile-column,
     .profile-table,
     .profile-table tbody,
-    .profile-table tr,
-    .profile-column,
-    .info-column {
+    .profile-table tr {
         display: block;
         width: 100%;
     }
 
-    /* Hide specific columns */
-    .col-posts,
-    .col-date,
-    .thread-col-user {
-        display: none;
-    }
-
-    /* Adjust remaining columns */
-    .col-user,
-    .col-subject,
-    .thread-col-subject {
+    .table-max-w {
         width: 100%;
     }
 
-    /* Make table header sticky */
-    thead {
-        position: sticky;
-        top: 0;
-        background-color: var(--header-color);
-        z-index: 2;
-    }
-
-    /* Adjust table layout for mobile */
-    table, tbody, tr, td {
-        display: table;
-    }
-
     td {
-        text-align: left !important;
         padding: 10px 5px;
     }
 
-    td:before {
-        float: left;
-        font-weight: bold;
-        text-transform: uppercase;
+    table {
+        display: table;
+        width: 100%;
     }
 
-    .user {
-        text-align: left;
-        padding-left: 5px;
+    thead {
+        background-color: var(--header-color);
+        position: sticky;
+        top: 0;
+        z-index: 2;
     }
-}
 
-@media (max-width: 600px) {
+    thead,
+    tbody,
+    tr {
+        display: table;
+        width: 100%;
+    }
+
+    th,
+    td {
+        display: table-cell;
+    }
+
     .form-container {
         padding: 15px;
     }
 
+    .form-group input,
     .form-group textarea,
     .form-group button {
         font-size: 0.9em;

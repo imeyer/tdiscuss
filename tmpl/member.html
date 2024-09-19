@@ -17,32 +17,9 @@
                     Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
                     First posted: {{ .Member.DateFirstPost.Time }}
                 </div>
-                {{ if .MemberThreads }}
+                {{ if .Threads }}
                 <div class="thread-content-row">
-                    <table>
-                        <colgroup>
-                            <col class="thread-col-subject">
-                            <col class="col-date">
-                        </colgroup>
-                        <thead>
-                            <tr>
-                                <th>subject</th>
-                                <th>last post</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{ range .MemberThreads }}
-                            <tr>
-                                <td>
-                                    <a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a>
-                                </td>
-                                <td>
-                                    {{ .DateLastPosted.Time | formatTimestamp }}
-                                </td>
-                            </tr>
-                            {{ end }}
-                        </tbody>
-                    </table>
+                    {{ template "index-thread-partial" . }}
                 </div>
                 {{else}}
                 <div class="content-row">

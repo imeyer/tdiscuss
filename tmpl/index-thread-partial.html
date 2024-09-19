@@ -1,16 +1,10 @@
 {{ define "index-thread-partial" }}
 {{ if .Threads }}
 <table class="table-max-w">
-    <colgroup>
-        <col class="col-user" />
-        <col class="col-subject" />
-        <col class="col-posts" />
-        <col class="col-date" />
-    </colgroup>
     <thead>
         <tr>
-            <th class="user">user</th>
-            <th>subject</th>
+            <th class="col-user">user</th>
+            <th class="col-subject">subject</th>
             <th class="col-posts">posts</th>
             <th class="col-date">date</th>
         </tr>
@@ -18,8 +12,8 @@
     <tbody>
         {{ range .Threads }}
         <tr>
-            <td class="user"><a href="/member/{{ .Lastid.Int64 }}">{{ .Email.String }}</a></td>
-            <td><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
+            <td class="col-user"><a href="/member/{{ .Lastid.Int64 }}">{{ .Email.String }}</a></td>
+            <td class="col-subject"><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a></td>
             <td class="col-posts">{{ .Posts.Int32 }}</td>
             <td class="col-date">{{ .DateLastPosted.Time | formatTimestamp }}</td>
         </tr>
