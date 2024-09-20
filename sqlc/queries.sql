@@ -72,7 +72,6 @@ SELECT
   t.subject,
   t.posts,
   t.views,
-  tp.body,
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
   (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
   t.sticky,

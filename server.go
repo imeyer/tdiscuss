@@ -217,6 +217,22 @@ func waitForShutdown(sigChan chan os.Signal, ctx context.Context, logger *slog.L
 }
 
 // Struct for template data rendering
+type MemberThreadPostTemplateData struct {
+	ThreadID       int64
+	DateLastPosted pgtype.Timestamptz
+	ID             pgtype.Int8
+	Email          pgtype.Text
+	Lastid         pgtype.Int8
+	Lastname       pgtype.Text
+	Subject        template.HTML
+	Posts          pgtype.Int4
+	Views          pgtype.Int4
+	LastViewPosts  interface{}
+	Dot            string
+	Sticky         pgtype.Bool
+	Locked         pgtype.Bool
+}
+
 type ThreadPostTemplateData struct {
 	ID         int64
 	DatePosted pgtype.Timestamptz
@@ -514,6 +530,24 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberThreadsParsed := make([]MemberThreadPostTemplateData, len(memberThreads))
+	for i, mt := range memberThreads {
+		memberThreadsParsed[i] = MemberThreadPostTemplateData{
+			ThreadID:       mt.ThreadID,
+			DateLastPosted: mt.DateLastPosted,
+			ID:             mt.ID,
+			Email:          mt.Email,
+			Lastid:         mt.Lastid,
+			Lastname:       mt.Lastname,
+			Subject:        template.HTML(mt.Subject),
+			Posts:          mt.Posts,
+			LastViewPosts:  mt.LastViewPosts,
+			Dot:            mt.Dot,
+			Sticky:         mt.Sticky,
+			Locked:         mt.Locked,
+		}
+	}
+
 	member, err := s.queries.GetMember(r.Context(), memberID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
@@ -524,7 +558,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
 		"Title":   BOARD_TITLE,
 		"Member":  member,
-		"Threads": memberThreads,
+		"Threads": memberThreadsParsed,
 		"GitSha":  s.gitSha,
 		"Version": s.version,
 	})

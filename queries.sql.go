@@ -136,7 +136,6 @@ SELECT
   t.subject,
   t.posts,
   t.views,
-  tp.body,
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
   (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
   t.sticky,
@@ -175,7 +174,6 @@ type ListMemberThreadsRow struct {
 	Subject        string
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
-	Body           pgtype.Text
 	LastViewPosts  interface{}
 	Dot            string
 	Sticky         pgtype.Bool
@@ -201,7 +199,6 @@ func (q *Queries) ListMemberThreads(ctx context.Context, memberID int64) ([]List
 			&i.Subject,
 			&i.Posts,
 			&i.Views,
-			&i.Body,
 			&i.LastViewPosts,
 			&i.Dot,
 			&i.Sticky,
