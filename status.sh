@@ -6,4 +6,4 @@ if [[ $? != 0 ]]; then
 fi
 
 echo "STABLE_GIT_SHA ${git_sha}"
-echo "STABLE_VERSION v0.0.1-alpha13"
+echo "STABLE_VERSION v0.0.1"
