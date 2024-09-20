@@ -21,7 +21,7 @@ SELECT createOrReturnID($1);
 SELECT id FROM member WHERE email = $1;
 
 -- name: GetMember :one
-SELECT email, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1;
+SELECT email, location, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1;
 
 -- name: ListThreads :many
 SELECT
@@ -124,3 +124,9 @@ ORDER BY tp.date_posted ASC;
 
 -- name: GetThreadSubjectById :one
 SELECT subject FROM thread WHERE id=$1;
+
+-- name: UpdateMemberByEmail :exec
+UPDATE member SET
+  photo_url = $2,
+  location = $3
+WHERE email = $1;

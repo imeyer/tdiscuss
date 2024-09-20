@@ -1,5 +1,12 @@
 {{ template "header" . }}
 
+{{ if .Member }}
+{{ if eq .CurrentUserEmail .Member.Email }}
+<h2>
+    <a href="/member/edit">Edit Profile</a>
+</h2>
+{{ end }}
+
 <table class="profile-table">
     <tr>
         <td class="profile-column">
@@ -14,6 +21,9 @@
         <td class="info-column">
             <div class="content-container">
                 <div class="content-row">
+                    {{ if .Member.Location.Valid }}
+                    Location: {{ .Member.Location.String }}<br />
+                    {{ end }}
                     Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
                     First posted: {{ .Member.DateFirstPost.Time }}
                 </div>
@@ -30,5 +40,8 @@
         </td>
     </tr>
 </table>
+{{ else }}
+<h1>Can not find member</h1>
+{{ end }}
 
 {{ template "footer" . }}

@@ -18,8 +18,9 @@
     last_post            timestamp,                            -- last post to board
     last_search          timestamp,                            -- last time user searched
     last_view            timestamp,                            -- last view of board
+    location             varchar,                              -- location of member
     photo_url            varchar,                              -- url to the users photo
-    session              char(32),                              -- session token
+    session              char(32),                             -- session token
     total_thread_posts   int DEFAULT 0,                        -- member's total posts
     total_threads        int DEFAULT 0                         -- member's total threads created
   );

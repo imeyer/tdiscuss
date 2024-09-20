@@ -57,11 +57,12 @@ func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostPara
 }
 
 const getMember = `-- name: GetMember :one
-SELECT email, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1
+SELECT email, location, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1
 `
 
 type GetMemberRow struct {
 	Email         string
+	Location      pgtype.Text
 	ID            int64
 	DateJoined    pgtype.Timestamptz
 	DateFirstPost pgtype.Date
@@ -73,6 +74,7 @@ func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 	var i GetMemberRow
 	err := row.Scan(
 		&i.Email,
+		&i.Location,
 		&i.ID,
 		&i.DateJoined,
 		&i.DateFirstPost,
@@ -367,4 +369,22 @@ func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThread
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateMemberByEmail = `-- name: UpdateMemberByEmail :exec
+UPDATE member SET
+  photo_url = $2,
+  location = $3
+WHERE email = $1
+`
+
+type UpdateMemberByEmailParams struct {
+	Email    string
+	PhotoUrl pgtype.Text
+	Location pgtype.Text
+}
+
+func (q *Queries) UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error {
+	_, err := q.db.Exec(ctx, updateMemberByEmail, arg.Email, arg.PhotoUrl, arg.Location)
+	return err
 }

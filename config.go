@@ -41,7 +41,7 @@ func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
 	}
 
 	dbConfig.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
-		logger.Debug("acquiring connection pool", slog.Any("config", c.Config()))
+		logger.Debug("acquiring connection pool")
 		return true
 	}
 

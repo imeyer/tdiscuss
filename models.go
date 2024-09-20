@@ -33,6 +33,7 @@ type Member struct {
 	LastPost         pgtype.Timestamp
 	LastSearch       pgtype.Timestamp
 	LastView         pgtype.Timestamp
+	Location         pgtype.Text
 	PhotoUrl         pgtype.Text
 	Session          pgtype.Text
 	TotalThreadPosts pgtype.Int4

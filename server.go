@@ -30,7 +30,7 @@ func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger 
 		} else {
 			switch st.BackendState {
 			case "NoState":
-				logger.DebugContext(ctx, "no state", slog.String("health", st.Health[0]))
+				logger.DebugContext(ctx, "no state")
 				time.Sleep(5 * time.Second)
 				continue
 			case "NeedsLogin":
@@ -129,6 +129,8 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	tailnetMux := http.NewServeMux()
 	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
 	tailnetMux.HandleFunc("GET /member/{id}", dsvc.ListMember)
+	tailnetMux.HandleFunc("GET /member/edit", dsvc.EditMemberProfile)
+	tailnetMux.HandleFunc("POST /member/edit", dsvc.EditMemberProfile)
 	tailnetMux.HandleFunc("GET /thread/new", dsvc.NewThread)
 	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
 	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
@@ -377,6 +379,88 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
+func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Get the current user's email
+	currentUserEmail, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Get the member ID from the URL
+	memberID, err := s.queries.GetMemberId(r.Context(), currentUserEmail)
+	if err != nil {
+		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
+			"Title":            BOARD_TITLE + " - Edit Profile",
+			"Member":           GetMemberRow{},
+			"CurrentUserEmail": currentUserEmail,
+			"Version":          s.version,
+			"GitSha":           s.gitSha,
+		})
+		return
+	}
+
+	// Get the member details
+	member, err := s.queries.GetMember(r.Context(), memberID)
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Check if the current user is the owner of the profile
+	if member.Email != currentUserEmail {
+		s.renderError(w, r, fmt.Errorf("unauthorized"), http.StatusForbidden)
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		// Render the edit profile form
+		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
+			"Title":            BOARD_TITLE + " - Edit Profile",
+			"Member":           member,
+			"CurrentUserEmail": currentUserEmail,
+			"Version":          s.version,
+			"GitSha":           s.gitSha,
+		})
+		return
+	}
+
+	// Handle POST request
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		return
+	}
+
+	// Get the new photo URL from the form
+	newPhotoURL := r.Form.Get("photo_url")
+	newLocation := r.Form.Get("location")
+
+	// Update the member's profile
+	err = s.queries.UpdateMemberByEmail(r.Context(), UpdateMemberByEmailParams{
+		Email: currentUserEmail,
+		PhotoUrl: pgtype.Text{
+			String: parseHTMLStrict(newPhotoURL),
+			Valid:  true,
+		},
+		Location: pgtype.Text{
+			String: parseHTMLStrict(newLocation),
+			Valid:  true,
+		},
+	})
+	if err != nil {
+		s.renderError(w, r, err, http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect to the member's profile page
+	http.Redirect(w, r, fmt.Sprintf("/member/%d", memberID), http.StatusSeeOther)
+}
+
 func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
 	user, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
 	if err != nil {
@@ -518,6 +602,12 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	currentUserEmail, err := s.GetTailscaleUserEmail(r)
+	if err != nil {
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
 		return
@@ -556,11 +646,12 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
-		"Title":   BOARD_TITLE,
-		"Member":  member,
-		"Threads": memberThreadsParsed,
-		"GitSha":  s.gitSha,
-		"Version": s.version,
+		"Title":            BOARD_TITLE,
+		"Member":           member,
+		"CurrentUserEmail": currentUserEmail,
+		"Threads":          memberThreadsParsed,
+		"GitSha":           s.gitSha,
+		"Version":          s.version,
 	})
 }
 

@@ -1,0 +1,29 @@
+{{ template "header" . }}
+
+{{ if .Member }}
+<h2>Editing profile for {{ .CurrentUserEmail }}</h2>
+
+<div class="form-container">
+    <form action="/member/edit" method="POST">
+        <div class="form-group">
+            <label for="photo_url">Photo URL</label>
+            <input type="url" id="photo_url" size="72px" name="photo_url" value="{{ .Member.PhotoUrl.String }}">
+        </div>
+        <div class="form-group">
+            <label for="location">Location</label>
+            <input type="text" id="location" size="72px" name="location" value="{{ .Member.Location.String }}">
+        </div>
+        <div class="form-group">
+            <button type="submit">Update Profile</button>
+        </div>
+    </form>
+</div>
+
+<a href="/member/{{ .Member.ID }}">Back to Profile</a>
+</div>
+</div>
+{{ else }}
+<h1>No member here...</h1>
+{{ end }}
+
+{{ template "footer" . }}
