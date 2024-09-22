@@ -66,8 +66,18 @@ go_library(
 ) for (goos, goarch) in PLATFORMS]
 
 go_test(
-    name = "tdiscuss_parser_test",
-    srcs = ["parser_test.go"],
-    embed = [":tdiscuss_lib"],
+    name = "tdiscuss_test",
+    srcs = [
+        "config_test.go",
+        "helpers_test.go",
+        "parser_test.go",
+    ],
     size = "small",
+    embed = [":tdiscuss_lib"],
+    deps = [
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
 )

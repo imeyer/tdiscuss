@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -10,7 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
+// PoolConfig function with error handling
+func PoolConfig(dsn *string, logger *slog.Logger) (*pgxpool.Config, error) {
 	const defaultMaxConns = int32(4)
 	const defaultMinConns = int32(0)
 	const defaultMaxConnLifetime = time.Hour
@@ -18,9 +19,9 @@ func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
 	const defaultHealthCheckPeriod = time.Minute
 	const defaultConnectTimeout = time.Second * 5
 
-	dbConfig, err := pgxpool.ParseConfig(dsn)
+	dbConfig, err := pgxpool.ParseConfig(*dsn)
 	if err != nil {
-		log.Fatal(err.Error())
+		return nil, fmt.Errorf("failed to parse database configuration: %w", err)
 	}
 
 	dbConfig.MaxConns = defaultMaxConns
@@ -54,5 +55,5 @@ func PoolConfig(dsn string, logger *slog.Logger) *pgxpool.Config {
 		logger.Debug("closing connection pool")
 	}
 
-	return dbConfig
+	return dbConfig, nil
 }

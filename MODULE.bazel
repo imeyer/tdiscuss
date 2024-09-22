@@ -19,6 +19,7 @@ use_repo(
     "com_github_jackc_pgx_v5",
     "com_github_microcosm_cc_bluemonday",
     "com_github_prometheus_client_golang",
+    "com_github_stretchr_testify",
     "com_github_yuin_goldmark",
     "com_github_yuin_goldmark_emoji",
     "com_tailscale",

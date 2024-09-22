@@ -48,7 +48,11 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	dbconn := setupDatabase(ctx, logger)
+	dbconn, err := setupDatabase(ctx, logger)
+	if err != nil {
+		logger.Error("failed to connect to	 database", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 	defer dbconn.Close()
 
 	s := setupTsNetServer(logger)

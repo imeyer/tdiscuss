@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"os"
@@ -78,16 +80,52 @@ func newLogger(logLevel *slog.Level) *slog.Logger {
 	return logger
 }
 
-func setupDatabase(ctx context.Context, logger *slog.Logger) *pgxpool.Pool {
-	dbCtx, dbCancel := context.WithTimeout(ctx, 5*time.Second)
+var (
+	PoolConfigFunc    = PoolConfig
+	NewWithConfigFunc = pgxpool.NewWithConfig
+)
+
+func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, error) {
+	dbCtx, dbCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer dbCancel()
 
-	dbconn, err := pgxpool.NewWithConfig(dbCtx, PoolConfig(os.Getenv("DATABASE_URL"), logger))
-	if err != nil {
-		logger.Error("unable to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		return nil, errors.New("DATABASE_URL environment variable is not set")
 	}
-	return dbconn
+
+	// Use the overrideable PoolConfigFunc
+	poolConfig, err := PoolConfigFunc(&dbURL, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create pool config: %w", err)
+	}
+
+	// Attempt to create the database connection
+	var dbconn *pgxpool.Pool
+	var connectErr error
+	for attempts := 1; attempts <= 3; attempts++ {
+		dbconn, connectErr = NewWithConfigFunc(dbCtx, poolConfig)
+		if connectErr == nil {
+			break
+		}
+		logger.Warn("failed to connect to database",
+			slog.String("error", connectErr.Error()),
+			slog.Int("attempt", attempts))
+		time.Sleep(time.Duration(attempts) * time.Second)
+	}
+
+	if connectErr != nil {
+		return nil, fmt.Errorf("unable to connect to database after 3 attempts: %w", connectErr)
+	}
+
+	// Test the connection
+	if err := dbconn.Ping(dbCtx); err != nil {
+		dbconn.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	logger.Info("successfully connected to the database")
+	return dbconn, nil
 }
 
 func setupLogger() *slog.Logger {
