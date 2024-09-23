@@ -31,3 +31,6 @@ bazel-*
 .buildbuddy.bazelrc
 
 .vscode/
+
+# Code coverage reports
+genhtml/

@@ -21,7 +21,7 @@ SELECT createOrReturnID($1);
 SELECT id FROM member WHERE email = $1;
 
 -- name: GetMember :one
-SELECT email, location, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1;
+SELECT email, location, id, date_joined, photo_url FROM member WHERE id = $1;
 
 -- name: ListThreads :many
 SELECT

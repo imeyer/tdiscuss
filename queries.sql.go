@@ -57,16 +57,15 @@ func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostPara
 }
 
 const getMember = `-- name: GetMember :one
-SELECT email, location, id, date_joined, date_first_post, photo_url FROM member WHERE id = $1
+SELECT email, location, id, date_joined, photo_url FROM member WHERE id = $1
 `
 
 type GetMemberRow struct {
-	Email         string
-	Location      pgtype.Text
-	ID            int64
-	DateJoined    pgtype.Timestamptz
-	DateFirstPost pgtype.Date
-	PhotoUrl      pgtype.Text
+	Email      string
+	Location   pgtype.Text
+	ID         int64
+	DateJoined pgtype.Timestamptz
+	PhotoUrl   pgtype.Text
 }
 
 func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {
@@ -77,7 +76,6 @@ func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 		&i.Location,
 		&i.ID,
 		&i.DateJoined,
-		&i.DateFirstPost,
 		&i.PhotoUrl,
 	)
 	return i, err

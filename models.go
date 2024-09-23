@@ -24,7 +24,6 @@ type Favorite struct {
 
 type Member struct {
 	Cookie           pgtype.Text
-	DateFirstPost    pgtype.Date
 	DateJoined       pgtype.Timestamptz
 	Email            string
 	ID               int64
@@ -35,7 +34,6 @@ type Member struct {
 	LastView         pgtype.Timestamp
 	Location         pgtype.Text
 	PhotoUrl         pgtype.Text
-	Session          pgtype.Text
 	TotalThreadPosts pgtype.Int4
 	TotalThreads     pgtype.Int4
 }
@@ -82,7 +80,6 @@ type Pref struct {
 	Name       string
 	Display    string
 	Profile    bool
-	Session    bool
 	Editable   bool
 	Width      pgtype.Int4
 	Ordering   pgtype.Int4

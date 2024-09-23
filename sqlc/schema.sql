@@ -9,7 +9,6 @@
   CREATE TABLE member
   (
     cookie               char(32),
-    date_first_post      date,                                 -- the date of the member's first post
     date_joined          timestamptz DEFAULT now(),            -- date of signup
     email                varchar NOT NULL CHECK(email <> ''),  -- email used to sign up
     id                   bigserial UNIQUE PRIMARY KEY,         -- id
@@ -20,7 +19,6 @@
     last_view            timestamp,                            -- last view of board
     location             varchar,                              -- location of member
     photo_url            varchar,                              -- url to the users photo
-    session              char(32),                             -- session token
     total_thread_posts   int DEFAULT 0,                        -- member's total posts
     total_threads        int DEFAULT 0                         -- member's total threads created
   );
@@ -42,7 +40,6 @@
     name          text NOT NULL CHECK(name <> ''),
     display       text NOT NULL CHECK(display <> ''),
     profile       bool NOT NULL DEFAULT false,
-    session       bool NOT NULL DEFAULT false,
     editable      bool NOT NULL DEFAULT true,
     width         int,
     ordering      int,

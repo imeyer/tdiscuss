@@ -30,7 +30,7 @@ BAZEL_RUN_ARGS := run
 # Change the hostname to anything you wish to use for testing
 BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev
 
-.PHONY: all clean
+.PHONY: all clean test run run-binary genhtml release coverage
 
 all: test build
 
@@ -53,6 +53,16 @@ run-binary:
 release:
 	@echo "Building release for $(PLATFORM)-$(ARCH)"
 	$(BAZEL) $(BAZEL_RELEASE_ARGS) //:$(TARGET)
+
+coverage:
+	@echo "Generating coverage for //..."
+	$(BAZEL) coverage --combined_report=lcov //...
+
+genhtml:
+	@echo "Generating HTML report for coverage"
+	@[ -d "$(shell pwd)/genhtml" ] && rm -rf "$(shell pwd)/genhtml" && echo "Removed previous genhtml/"
+	@genhtml --branch-coverage --output genhtml "$(shell $(BAZEL) info output_path)/_coverage/_coverage_report.dat" 2>&1>/dev/null
+
 
 clean:
 	$(BAZEL) clean

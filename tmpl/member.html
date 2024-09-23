@@ -11,7 +11,7 @@
     <tr>
         <td class="profile-column">
             <div class="profile-photo">
-                {{ if .Member.PhotoUrl.Valid }}
+                {{ if ne .Member.PhotoUrl.String "" }}
                 <img src="{{ .Member.PhotoUrl.String }}" />
                 {{ else }}
                 NO PHOTO
@@ -25,7 +25,6 @@
                     Location: {{ .Member.Location.String }}<br />
                     {{ end }}
                     Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
-                    First posted: {{ .Member.DateFirstPost.Time }}
                 </div>
                 {{ if .Threads }}
                 <div class="thread-content-row">
