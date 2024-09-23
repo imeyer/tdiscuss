@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"log/slog"
@@ -126,5 +127,106 @@ func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 	}
 }
 
-// Note: Testing Ping failure and successful connections would require a more complex setup or
-// integration tests involving a real database or advanced mocking techniques.
+// mockMkdirAll is a variable of function type that matches os.MkdirAll
+var mockMkdirAll func(path string, perm os.FileMode) error
+
+// mockableCreateConfigDir is a version of createConfigDir that uses the mock function
+func mockableCreateConfigDir(dir *string) error {
+	err := mockMkdirAll(*dir, 0o700)
+	if err != nil {
+		return err
+	}
+	err = mockMkdirAll(filepath.Join(*dir, "tsnet"), 0o700)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func TestCreateConfigDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		dir     string
+		setup   func()
+		wantErr bool
+	}{
+		{
+			name: "Create new directory",
+			dir:  "testdata/config",
+			setup: func() {
+				mockMkdirAll = os.MkdirAll
+			},
+			wantErr: false,
+		},
+		{
+			name: "Create existing directory",
+			dir:  "testdata/existing",
+			setup: func() {
+				mockMkdirAll = os.MkdirAll
+				os.MkdirAll("testdata/existing", 0o700) // Create the directory beforehand
+			},
+			wantErr: false,
+		},
+		{
+			name: "Error creating main directory",
+			dir:  "testdata/error-main",
+			setup: func() {
+				mockMkdirAll = func(path string, perm os.FileMode) error {
+					return errors.New("mock error")
+				}
+			},
+			wantErr: true,
+		},
+		{
+			name: "Error creating tsnet subdirectory",
+			dir:  "testdata/error-tsnet",
+			setup: func() {
+				mockMkdirAll = func(path string, perm os.FileMode) error {
+					if filepath.Base(path) == "tsnet" {
+						return errors.New("mock error creating tsnet")
+					}
+					return os.MkdirAll(path, perm)
+				}
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup the test case
+			tt.setup()
+
+			// Clean up after each test
+			defer os.RemoveAll(tt.dir)
+
+			err := mockableCreateConfigDir(&tt.dir)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createConfigDir() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !tt.wantErr {
+				// Check if the main directory exists
+				if _, err := os.Stat(tt.dir); os.IsNotExist(err) {
+					t.Errorf("Main directory was not created")
+				}
+
+				// Check if the tsnet subdirectory exists
+				tsnetDir := filepath.Join(tt.dir, "tsnet")
+				if _, err := os.Stat(tsnetDir); os.IsNotExist(err) {
+					t.Errorf("tsnet subdirectory was not created")
+				}
+
+				// Check permissions
+				info, err := os.Stat(tt.dir)
+				if err != nil {
+					t.Errorf("Failed to get directory info: %v", err)
+				} else if info.Mode().Perm() != 0o700 {
+					t.Errorf("Incorrect permissions: got %v, want %v", info.Mode().Perm(), 0o700)
+				}
+			}
+		})
+	}
+}

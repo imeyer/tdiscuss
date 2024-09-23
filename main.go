@@ -62,11 +62,14 @@ func main() {
 
 	lc := getTailscaleLocalClient(s, logger)
 
+	queries := New(dbconn)
+	wrappedQueries := &QueriesWrapper{Queries: queries}
+
 	dsvc := NewDiscussService(
 		lc,
 		logger,
 		dbconn,
-		New(dbconn),
+		wrappedQueries,
 		tmpls,
 		*hostname,
 		version,

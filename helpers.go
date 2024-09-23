@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"tailscale.com/client/tailscale"
 	"tailscale.com/tsnet"
 )
 
@@ -47,7 +46,7 @@ func envOr(key, defaultVal string) string {
 	return defaultVal
 }
 
-func expandSNIName(ctx context.Context, lc *tailscale.LocalClient, logger *slog.Logger) string {
+func expandSNIName(ctx context.Context, lc TailscaleClient, logger *slog.Logger) string {
 	sni, ok := lc.ExpandSNIName(ctx, *hostname)
 	if !ok {
 		logger.Error("error expanding SNI name")
@@ -60,7 +59,7 @@ func formatTimestamp(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func getTailscaleLocalClient(s *tsnet.Server, logger *slog.Logger) *tailscale.LocalClient {
+func getTailscaleLocalClient(s *tsnet.Server, logger *slog.Logger) TailscaleClient {
 	lc, err := s.LocalClient()
 	if err != nil {
 		logger.Error("error creating s.LocalClient()")

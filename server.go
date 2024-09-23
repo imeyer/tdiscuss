@@ -14,15 +14,39 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"tailscale.com/client/tailscale"
+	"tailscale.com/client/tailscale/apitype"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 	tsnetlog "tailscale.com/types/logger"
 )
 
-func checkTailscaleReady(ctx context.Context, lc *tailscale.LocalClient, logger *slog.Logger) error {
+type TailscaleClient interface {
+	WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
+	ExpandSNIName(ctx context.Context, name string) (fqdn string, ok bool)
+	Status(ctx context.Context) (*ipnstate.Status, error)
+	StatusWithoutPeers(ctx context.Context) (*ipnstate.Status, error)
+}
+
+type ExtendedQuerier interface {
+	Querier
+	WithTx(tx pgx.Tx) ExtendedQuerier
+}
+
+type QueriesWrapper struct {
+	*Queries // embedded from pgx
+}
+
+func (qw *QueriesWrapper) WithTx(tx pgx.Tx) ExtendedQuerier {
+	return &QueriesWrapper{
+		Queries: qw.Queries.WithTx(tx),
+	}
+}
+
+func checkTailscaleReady(ctx context.Context, lc TailscaleClient, logger *slog.Logger) error {
 	for {
 		st, err := lc.Status(ctx)
 		if err != nil {
@@ -79,20 +103,20 @@ func createHTTPSServer(mux http.Handler) *http.Server {
 }
 
 type DiscussService struct {
-	tailClient *tailscale.LocalClient
+	tailClient TailscaleClient
 	logger     *slog.Logger
 	dbconn     *pgxpool.Pool
-	queries    *Queries
+	queries    Querier
 	tmpls      *template.Template
 	httpsURL   string
 	version    string
 	gitSha     string
 }
 
-func NewDiscussService(tailClient *tailscale.LocalClient,
+func NewDiscussService(tailClient TailscaleClient,
 	logger *slog.Logger,
 	dbconn *pgxpool.Pool,
-	queries *Queries,
+	queries Querier,
 	tmpls *template.Template,
 	httpsURL string,
 	version string,
@@ -297,7 +321,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 
-	qtx := s.queries.WithTx(tx)
+	qtx := s.queries.(ExtendedQuerier).WithTx(tx)
 
 	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
 		Subject:      subject,
