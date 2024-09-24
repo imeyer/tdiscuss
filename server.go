@@ -352,6 +352,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
@@ -695,7 +696,7 @@ func (s *DiscussService) renderError(w http.ResponseWriter, r *http.Request, err
 	http.Error(w, http.StatusText(statusCode), statusCode)
 }
 
-// ThreadNew displays the page for creating a new thread.
+// NewThread displays the page for creating a new thread.
 func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/thread/new" || r.Method != http.MethodGet {
 		http.NotFound(w, r)
