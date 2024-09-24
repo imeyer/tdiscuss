@@ -74,6 +74,7 @@ go_test(
     size = "small",
     srcs = [
         "config_test.go",
+        "csrf_test.go",
         "helpers_test.go",
         "parser_test.go",
         "server_test.go",

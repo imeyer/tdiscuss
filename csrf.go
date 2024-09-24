@@ -18,6 +18,7 @@ const (
 var (
 	tokenStore   = make(map[string]time.Time)
 	tokenStoreMu sync.Mutex
+	timeNow      = time.Now
 )
 
 func generateCSRFToken() (string, error) {
@@ -46,7 +47,7 @@ func setCSRFToken(r *http.Request, w http.ResponseWriter) (string, error) {
 	})
 
 	tokenStoreMu.Lock()
-	tokenStore[token] = time.Now().Add(24 * time.Hour) // Token expires in 24 hours
+	tokenStore[token] = timeNow().Add(24 * time.Hour) // Token expires in 24 hours
 	tokenStoreMu.Unlock()
 
 	return token, nil
@@ -75,7 +76,7 @@ func validateCSRFToken(r *http.Request) error {
 		return errors.New("CSRF token not found in store")
 	}
 
-	if time.Now().After(expiry) {
+	if timeNow().After(expiry) {
 		delete(tokenStore, token)
 		return errors.New("CSRF token expired")
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,7 +86,7 @@ func TestSetupDatabase_PoolConfigError(t *testing.T) {
 
 func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 	ctx := context.Background()
-	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	// Set DATABASE_URL to some value
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost/dbname")
