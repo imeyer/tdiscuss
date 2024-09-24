@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -19,7 +21,12 @@ var (
 	tokenStore   = make(map[string]time.Time)
 	tokenStoreMu sync.Mutex
 	timeNow      = time.Now
+	csrfLogger   *slog.Logger
 )
+
+func initCSRFLogger(logger *slog.Logger) {
+	csrfLogger = logger
+}
 
 func generateCSRFToken() (string, error) {
 	b := make([]byte, csrfTokenLength)
@@ -46,6 +53,10 @@ func setCSRFToken(r *http.Request, w http.ResponseWriter) (string, error) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
+	if csrfLogger != nil {
+		csrfLogger.DebugContext(r.Context(), "set csrf cookie")
+	}
+
 	tokenStoreMu.Lock()
 	tokenStore[token] = timeNow().Add(24 * time.Hour) // Token expires in 24 hours
 	tokenStoreMu.Unlock()
@@ -56,15 +67,27 @@ func setCSRFToken(r *http.Request, w http.ResponseWriter) (string, error) {
 func validateCSRFToken(r *http.Request) error {
 	cookie, err := r.Cookie(csrfCookieName)
 	if err != nil {
+		if csrfLogger != nil {
+			csrfLogger.DebugContext(r.Context(), "csrf error", slog.String("message", err.Error()))
+		}
 		return errors.New("CSRF cookie not found")
 	}
 
 	token := r.Header.Get(csrfHeaderName)
 	if token == "" {
-		return errors.New("CSRF token not found in header")
+		token = r.FormValue("csrf_token")
+		if token == "" {
+			if csrfLogger != nil {
+				csrfLogger.DebugContext(r.Context(), "csrf token not found in header or form")
+			}
+			return errors.New("CSRF token not found in header or form")
+		}
 	}
 
 	if cookie.Value != token {
+		if csrfLogger != nil {
+			csrfLogger.DebugContext(r.Context(), "csrf token mismatch")
+		}
 		return errors.New("CSRF token mismatch")
 	}
 
@@ -73,11 +96,17 @@ func validateCSRFToken(r *http.Request) error {
 
 	expiry, exists := tokenStore[token]
 	if !exists {
+		if csrfLogger != nil {
+			csrfLogger.DebugContext(r.Context(), "csrf token not found in store")
+		}
 		return errors.New("CSRF token not found in store")
 	}
 
 	if timeNow().After(expiry) {
 		delete(tokenStore, token)
+		if csrfLogger != nil {
+			csrfLogger.DebugContext(r.Context(), "csrf token expired")
+		}
 		return errors.New("CSRF token expired")
 	}
 
@@ -93,6 +122,9 @@ func CSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 			w.Header().Set(csrfHeaderName, token)
+
+			ctx := context.WithValue(r.Context(), "CSRFToken", token)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		} else {
 			if err := validateCSRFToken(r); err != nil {
 				http.Error(w, "CSRF validation failed", http.StatusForbidden)

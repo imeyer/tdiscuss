@@ -48,6 +48,11 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
+	// Enabling logging within csrf.go
+	if *debug {
+		initCSRFLogger(logger.With("component", "csrf"))
+	}
+
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {
 		logger.Error("failed to connect to	 database", slog.String("error", err.Error()))

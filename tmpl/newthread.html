@@ -4,6 +4,7 @@
 
 <div class="form-container">
     <form action="/thread/new" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <div class="form-group">
             <label for="subject">subject</label>
             <input type="text" id="subject" name="subject" required>

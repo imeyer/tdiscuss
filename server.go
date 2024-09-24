@@ -151,14 +151,16 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	}
 
 	tailnetMux := http.NewServeMux()
+
+	tailnetMux.HandleFunc("POST /member/edit", CSRFMiddleware(dsvc.EditMemberProfile))
+	tailnetMux.HandleFunc("POST /thread/new", CSRFMiddleware(dsvc.CreateThread))
+	tailnetMux.HandleFunc("POST /thread/{id}", CSRFMiddleware(dsvc.CreateThreadPost))
+
 	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
 	tailnetMux.HandleFunc("GET /member/{id}", dsvc.ListMember)
 	tailnetMux.HandleFunc("GET /member/edit", dsvc.EditMemberProfile)
-	tailnetMux.HandleFunc("POST /member/edit", dsvc.EditMemberProfile)
 	tailnetMux.HandleFunc("GET /thread/new", dsvc.NewThread)
-	tailnetMux.HandleFunc("POST /thread/new", dsvc.CreateThread)
 	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
-	tailnetMux.HandleFunc("POST /thread/{id}", dsvc.CreateThreadPost)
 	tailnetMux.Handle("GET /metrics", promhttp.Handler())
 	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(fs))))
 
@@ -401,6 +403,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
@@ -409,6 +412,8 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
 		return
 	}
+
+	csrfToken, err := setCSRFToken(r, w)
 
 	// Get the current user's email
 	currentUserEmail, err := s.GetTailscaleUserEmail(r)
@@ -426,6 +431,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 			"CurrentUserEmail": currentUserEmail,
 			"Version":          s.version,
 			"GitSha":           s.gitSha,
+			"CSRFToken":        csrfToken,
 		})
 		return
 	}
@@ -451,6 +457,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 			"CurrentUserEmail": currentUserEmail,
 			"Version":          s.version,
 			"GitSha":           s.gitSha,
+			"CSRFToken":        csrfToken,
 		})
 		return
 	}
@@ -483,6 +490,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Redirect to the member's profile page
+	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/member/%d", memberID), http.StatusSeeOther)
 }
 
@@ -567,6 +575,8 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	csrfToken, err := setCSRFToken(r, w)
+
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
 		s.renderError(w, r, err, http.StatusInternalServerError)
@@ -615,10 +625,11 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"Title":       BOARD_TITLE,
 		"ThreadPosts": threadPosts,
 		// nosemgrep
-		"Subject": template.HTML(subject),
-		"ID":      threadID,
-		"GitSha":  s.gitSha,
-		"Version": s.version,
+		"Subject":   template.HTML(subject),
+		"ID":        threadID,
+		"GitSha":    s.gitSha,
+		"Version":   s.version,
+		"CSRFToken": csrfToken,
 	})
 }
 
@@ -703,6 +714,8 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	csrfToken, err := setCSRFToken(r, w)
+
 	email, err := s.GetTailscaleUserEmail(r)
 	if err != nil {
 		s.renderError(w, r, err, http.StatusInternalServerError)
@@ -717,9 +730,10 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
-		"User":    email,
-		"Title":   BOARD_TITLE,
-		"Version": s.version,
-		"GitSha":  s.gitSha,
+		"User":      email,
+		"Title":     BOARD_TITLE,
+		"CSRFToken": csrfToken,
+		"Version":   s.version,
+		"GitSha":    s.gitSha,
 	})
 }

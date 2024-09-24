@@ -15,6 +15,7 @@
 <p>
 <div class="form-container">
     <form action="/thread/{{ .ID }}" method="POST">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <div class="form-group">
             <label for="thread_body">reply...</label>
             <textarea id="thread_body" name="thread_body" rows="10" cols="75" required></textarea>
