@@ -92,6 +92,70 @@ func (q *Queries) GetMemberId(ctx context.Context, email string) (int64, error) 
 	return id, err
 }
 
+const getThreadForEdit = `-- name: GetThreadForEdit :one
+SELECT m.email AS email,
+  t.id AS thread_id,
+  t.subject AS subject,
+  tp.id AS thread_post_id,
+  tp.body AS body
+FROM thread t
+LEFT JOIN thread_post tp
+  ON tp.thread_id=t.id
+LEFT JOIN member m
+  ON t.member_id=m.id
+WHERE t.id=$1 AND m.id=$2
+`
+
+type GetThreadForEditParams struct {
+	ID   int64
+	ID_2 int64
+}
+
+type GetThreadForEditRow struct {
+	Email        pgtype.Text
+	ThreadID     int64
+	Subject      string
+	ThreadPostID pgtype.Int8
+	Body         pgtype.Text
+}
+
+func (q *Queries) GetThreadForEdit(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {
+	row := q.db.QueryRow(ctx, getThreadForEdit, arg.ID, arg.ID_2)
+	var i GetThreadForEditRow
+	err := row.Scan(
+		&i.Email,
+		&i.ThreadID,
+		&i.Subject,
+		&i.ThreadPostID,
+		&i.Body,
+	)
+	return i, err
+}
+
+const getThreadPostForEdit = `-- name: GetThreadPostForEdit :one
+SELECT tp.id, tp.body
+FROM thread_post tp LEFT JOIN member m
+  ON tp.member_id=m.id
+WHERE tp.id=$1 AND m.id=$2
+`
+
+type GetThreadPostForEditParams struct {
+	ID   int64
+	ID_2 int64
+}
+
+type GetThreadPostForEditRow struct {
+	ID   int64
+	Body pgtype.Text
+}
+
+func (q *Queries) GetThreadPostForEdit(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
+	row := q.db.QueryRow(ctx, getThreadPostForEdit, arg.ID, arg.ID_2)
+	var i GetThreadPostForEditRow
+	err := row.Scan(&i.ID, &i.Body)
+	return i, err
+}
+
 const getThreadPostSequenceId = `-- name: GetThreadPostSequenceId :one
 SELECT currval('thread_id_post_seq')
 `
@@ -137,7 +201,7 @@ SELECT
   t.posts,
   t.views,
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
-  (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
+  (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END)::boolean as dot,
   t.sticky,
   t.locked
 FROM
@@ -175,7 +239,7 @@ type ListMemberThreadsRow struct {
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
 	LastViewPosts  interface{}
-	Dot            string
+	Dot            bool
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
 }
@@ -223,7 +287,8 @@ SELECT
   tp.body,
   t.subject,
   t.id as thread_id,
-  m.is_admin
+  m.is_admin,
+  (CASE WHEN (m.email = $2 AND t.date_posted >= NOW() - INTERVAL '900 seconds') THEN 't' ELSE 'f' END)::boolean as can_edit
 FROM
   thread_post tp
 LEFT JOIN
@@ -238,6 +303,11 @@ WHERE tp.thread_id=$1
 ORDER BY tp.date_posted ASC
 `
 
+type ListThreadPostsParams struct {
+	ThreadID int64
+	Email    string
+}
+
 type ListThreadPostsRow struct {
 	ID         int64
 	DatePosted pgtype.Timestamptz
@@ -247,10 +317,11 @@ type ListThreadPostsRow struct {
 	Subject    pgtype.Text
 	ThreadID   pgtype.Int8
 	IsAdmin    pgtype.Bool
+	CanEdit    bool
 }
 
-func (q *Queries) ListThreadPosts(ctx context.Context, threadID int64) ([]ListThreadPostsRow, error) {
-	rows, err := q.db.Query(ctx, listThreadPosts, threadID)
+func (q *Queries) ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error) {
+	rows, err := q.db.Query(ctx, listThreadPosts, arg.ThreadID, arg.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +338,7 @@ func (q *Queries) ListThreadPosts(ctx context.Context, threadID int64) ([]ListTh
 			&i.Subject,
 			&i.ThreadID,
 			&i.IsAdmin,
+			&i.CanEdit,
 		); err != nil {
 			return nil, err
 		}
@@ -290,8 +362,9 @@ SELECT
   t.posts,
   t.views,
   tp.body,
+  (CASE WHEN (m.email = $1 AND t.date_posted >= NOW() - INTERVAL '900 seconds') THEN 't' ELSE 'f' END)::boolean as can_edit,
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
-  (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END) as dot,
+  (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END)::boolean as dot,
   t.sticky,
   t.locked
 FROM
@@ -311,11 +384,16 @@ ON
 LEFT OUTER JOIN
   thread_member tm
 ON
-  (tm.member_id=$1 AND tm.thread_id=t.id)
+  (tm.member_id=$2 AND tm.thread_id=t.id)
 WHERE t.sticky IS false
 ORDER BY t.date_last_posted DESC
 LIMIT 100
 `
+
+type ListThreadsParams struct {
+	Email    string
+	MemberID int64
+}
 
 type ListThreadsRow struct {
 	ThreadID       int64
@@ -328,14 +406,15 @@ type ListThreadsRow struct {
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
 	Body           pgtype.Text
+	CanEdit        bool
 	LastViewPosts  interface{}
-	Dot            string
+	Dot            bool
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
 }
 
-func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThreadsRow, error) {
-	rows, err := q.db.Query(ctx, listThreads, memberID)
+func (q *Queries) ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error) {
+	rows, err := q.db.Query(ctx, listThreads, arg.Email, arg.MemberID)
 	if err != nil {
 		return nil, err
 	}
@@ -354,6 +433,7 @@ func (q *Queries) ListThreads(ctx context.Context, memberID int64) ([]ListThread
 			&i.Posts,
 			&i.Views,
 			&i.Body,
+			&i.CanEdit,
 			&i.LastViewPosts,
 			&i.Dot,
 			&i.Sticky,
@@ -384,5 +464,43 @@ type UpdateMemberByEmailParams struct {
 
 func (q *Queries) UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error {
 	_, err := q.db.Exec(ctx, updateMemberByEmail, arg.Email, arg.PhotoUrl, arg.Location)
+	return err
+}
+
+const updateThread = `-- name: UpdateThread :exec
+UPDATE thread SET
+  subject = $1
+WHERE id = $2
+  AND member_id = $3
+  AND date_posted >= NOW() - INTERVAL '900 seconds'
+`
+
+type UpdateThreadParams struct {
+	Subject  string
+	ID       int64
+	MemberID int64
+}
+
+func (q *Queries) UpdateThread(ctx context.Context, arg UpdateThreadParams) error {
+	_, err := q.db.Exec(ctx, updateThread, arg.Subject, arg.ID, arg.MemberID)
+	return err
+}
+
+const updateThreadPost = `-- name: UpdateThreadPost :exec
+UPDATE thread_post SET
+  body = $1
+WHERE id = $2
+  AND member_id = $3
+  AND date_posted >= NOW() - INTERVAL '900 seconds'
+`
+
+type UpdateThreadPostParams struct {
+	Body     pgtype.Text
+	ID       int64
+	MemberID int64
+}
+
+func (q *Queries) UpdateThreadPost(ctx context.Context, arg UpdateThreadPostParams) error {
+	_, err := q.db.Exec(ctx, updateThreadPost, arg.Body, arg.ID, arg.MemberID)
 	return err
 }

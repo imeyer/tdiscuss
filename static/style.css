@@ -254,8 +254,16 @@ tbody>tr:nth-child(odd) {
 
 .subject {
     display: inline-block;
-    font-size: 1.1em;
-    margin-bottom: 0.1875rem;
+
+}
+
+.subject p {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-top: 0.4rem;
+    margin-bottom: 0.4rem;
+    margin-left: 0rem;
+    margin-right: 0rem;
 }
 
 .board-title,

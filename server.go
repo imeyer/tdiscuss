@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -11,9 +12,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,6 +37,11 @@ type TailscaleClient interface {
 type ExtendedQuerier interface {
 	Querier
 	WithTx(tx pgx.Tx) ExtendedQuerier
+}
+
+type User struct {
+	ID    int64
+	Email string
 }
 
 type QueriesWrapper struct {
@@ -154,17 +162,22 @@ func setupMux(dsvc *DiscussService) http.Handler {
 
 	tailnetMux.HandleFunc("POST /member/edit", CSRFMiddleware(dsvc.EditMemberProfile))
 	tailnetMux.HandleFunc("POST /thread/new", CSRFMiddleware(dsvc.CreateThread))
-	tailnetMux.HandleFunc("POST /thread/{id}", CSRFMiddleware(dsvc.CreateThreadPost))
+	tailnetMux.HandleFunc("POST /thread/{tid}/edit", CSRFMiddleware(dsvc.EditThread))
+	tailnetMux.HandleFunc("POST /thread/{tid}/{pid}/edit", CSRFMiddleware(dsvc.EditThreadPost))
+	tailnetMux.HandleFunc("POST /thread/{tid}", CSRFMiddleware(dsvc.CreateThreadPost))
 
-	tailnetMux.HandleFunc("GET /", dsvc.ListThreads)
-	tailnetMux.HandleFunc("GET /member/{id}", dsvc.ListMember)
-	tailnetMux.HandleFunc("GET /member/edit", dsvc.EditMemberProfile)
-	tailnetMux.HandleFunc("GET /thread/new", dsvc.NewThread)
-	tailnetMux.HandleFunc("GET /thread/{id}", dsvc.ListThreadPosts)
+	tailnetMux.HandleFunc("GET /{$}", CSRFMiddleware(dsvc.ListThreads))
+	tailnetMux.HandleFunc("GET /member/{mid}", CSRFMiddleware(dsvc.ListMember))
+	tailnetMux.HandleFunc("GET /member/edit", CSRFMiddleware(dsvc.EditMemberProfile))
+	tailnetMux.HandleFunc("GET /thread/new", CSRFMiddleware(dsvc.NewThread))
+	tailnetMux.HandleFunc("GET /thread/{tid}", CSRFMiddleware(dsvc.ListThreadPosts))
+	tailnetMux.HandleFunc("GET /thread/{tid}/edit", CSRFMiddleware(dsvc.EditThread))
+	tailnetMux.HandleFunc("GET /thread/{tid}/{pid}/edit", CSRFMiddleware(dsvc.EditThreadPost))
 	tailnetMux.Handle("GET /metrics", promhttp.Handler())
 	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(fs))))
 
-	return HistogramHttpHandler(tailnetMux)
+	// return HistogramHttpHandler(tailnetMux)
+	return UserMiddleware(dsvc, tailnetMux)
 }
 
 func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
@@ -256,9 +269,10 @@ type MemberThreadPostTemplateData struct {
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
 	LastViewPosts  interface{}
-	Dot            string
+	Dot            pgtype.Bool
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
+	CanEdit        pgtype.Bool
 }
 
 type ThreadPostTemplateData struct {
@@ -270,6 +284,7 @@ type ThreadPostTemplateData struct {
 	Subject    pgtype.Text
 	ThreadID   pgtype.Int8
 	IsAdmin    pgtype.Bool
+	CanEdit    pgtype.Bool
 }
 
 type ThreadTemplateData struct {
@@ -286,39 +301,47 @@ type ThreadTemplateData struct {
 	Dot            string
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
+	CanEdit        pgtype.Bool
 }
 
 // CreateThread handles the creation of a new thread.
 func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" || r.Method != http.MethodPost {
-		s.renderError(w, r, fmt.Errorf("invalid path or method"), http.StatusMethodNotAllowed)
+	if err := validateCSRFToken(r); err != nil {
+		s.logger.ErrorContext(r.Context(), "CSRF validation failed", slog.String("error", err.Error()))
+		http.Error(w, "CSRF validation failed", http.StatusForbidden)
+		return
+	}
+
+	if r.URL.Path != "/thread/new" {
+		s.renderError(w, http.StatusNotFound)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.DebugContext(r.Context(), "CreateThread", slog.String("user", user.Email), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil || !r.Form.Has("subject") || !r.Form.Has("thread_body") {
-		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		s.logger.DebugContext(r.Context(), "error parsing form", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
 	subject := parseHTMLStrict(parseMarkdownToHTML(r.Form.Get("subject")))
 	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
 
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
 	tx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error starting transaction", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback(r.Context())
@@ -327,30 +350,34 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
 		Subject:      subject,
-		MemberID:     memberID,
-		LastMemberID: memberID,
+		MemberID:     user.ID,
+		LastMemberID: user.ID,
 	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error creating thread", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	threadID, err := qtx.GetThreadSequenceId(r.Context())
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error getting thread sequence ID", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := qtx.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadID,
 		Body:     pgtype.Text{Valid: true, String: body},
-		MemberID: memberID,
+		MemberID: user.ID,
 	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error creating thread post", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := tx.Commit(r.Context()); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error committing transaction", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -360,36 +387,41 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 // CreateThreadPost handles adding a new post to an existing thread.
 func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+	if err := validateCSRFToken(r); err != nil {
+		s.logger.ErrorContext(r.Context(), "CSRF validation failed", slog.String("error", err.Error()))
+		http.Error(w, "CSRF validation failed", http.StatusForbidden)
 		return
 	}
 
-	threadID, err := parseID(r.URL.Path)
+	user, err := GetUser(r)
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user", user.Email), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	receivedToken := r.FormValue("csrf_token")
+	s.logger.DebugContext(r.Context(), "received csrf token", slog.String("token", receivedToken))
+
+	if r.Method != http.MethodPost {
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	threadIDStr := r.PathValue("tid")
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
+	if err != nil {
+		s.logger.DebugContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil || r.Form.Get("thread_body") == "" {
-		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
 	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
-
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
 
 	if err := s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadID,
@@ -397,9 +429,10 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 			Valid:  true,
 			String: body,
 		},
-		MemberID: memberID,
+		MemberID: user.ID,
 	}); err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "error creating thread post", slog.String("SQLError", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -409,52 +442,38 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
-		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+		s.renderError(w, http.StatusMethodNotAllowed)
 		return
 	}
 
-	csrfToken, err := setCSRFToken(r, w)
-
-	// Get the current user's email
-	currentUserEmail, err := s.GetTailscaleUserEmail(r)
+	user, err := GetUser(r)
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	// Get the member ID from the URL
-	memberID, err := s.queries.GetMemberId(r.Context(), currentUserEmail)
-	if err != nil {
-		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
-			"Title":            BOARD_TITLE + " - Edit Profile",
-			"Member":           GetMemberRow{},
-			"CurrentUserEmail": currentUserEmail,
-			"Version":          s.version,
-			"GitSha":           s.gitSha,
-			"CSRFToken":        csrfToken,
-		})
+		s.logger.ErrorContext(r.Context(), "EditMemberProfile", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// Get the member details
-	member, err := s.queries.GetMember(r.Context(), memberID)
+	member, err := s.queries.GetMember(r.Context(), user.ID)
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// Check if the current user is the owner of the profile
-	if member.Email != currentUserEmail {
-		s.renderError(w, r, fmt.Errorf("unauthorized"), http.StatusForbidden)
+	if member.Email != user.Email {
+		s.renderError(w, http.StatusForbidden)
 		return
 	}
+
+	csrfToken := GetCSRFToken(r)
 
 	if r.Method == http.MethodGet {
 		// Render the edit profile form
 		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
 			"Title":            BOARD_TITLE + " - Edit Profile",
 			"Member":           member,
-			"CurrentUserEmail": currentUserEmail,
+			"CurrentUserEmail": user.Email,
 			"Version":          s.version,
 			"GitSha":           s.gitSha,
 			"CSRFToken":        csrfToken,
@@ -464,7 +483,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 
 	// Handle POST request
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, r, fmt.Errorf("bad request"), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -474,7 +493,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 
 	// Update the member's profile
 	err = s.queries.UpdateMemberByEmail(r.Context(), UpdateMemberByEmailParams{
-		Email: currentUserEmail,
+		Email: user.Email,
 		PhotoUrl: pgtype.Text{
 			String: parseHTMLStrict(newPhotoURL),
 			Valid:  true,
@@ -485,13 +504,272 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		},
 	})
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
 	// Redirect to the member's profile page
 	// nosemgrep
-	http.Redirect(w, r, fmt.Sprintf("/member/%d", memberID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/member/%d", user.ID), http.StatusSeeOther)
+}
+
+func (s *DiscussService) EditThread(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "EditThreadPost", slog.String("tid", r.PathValue("tid")))
+
+	switch r.Method {
+	case http.MethodGet:
+		s.editThreadGET(w, r)
+		return
+	case http.MethodPost:
+		s.editThreadPOST(w, r)
+		return
+	default:
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+}
+
+func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	threadIDStr := r.PathValue("tid")
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
+	subject := parseHTMLStrict(parseMarkdownToHTML(r.Form.Get("subject")))
+
+	t, err := s.queries.GetThreadForEdit(r.Context(), GetThreadForEditParams{
+		ID:   threadID,
+		ID_2: user.ID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	if t.Body.String != body {
+		err = s.queries.UpdateThreadPost(r.Context(), UpdateThreadPostParams{
+			ID:       t.ThreadPostID.Int64,
+			Body:     pgtype.Text{Valid: true, String: body},
+			MemberID: user.ID,
+		})
+		if err != nil {
+			s.renderError(w, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if t.Subject != subject {
+		err = s.queries.UpdateThread(r.Context(), UpdateThreadParams{
+			Subject:  subject,
+			ID:       threadID,
+			MemberID: user.ID,
+		})
+	}
+
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
+}
+
+func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	csrfToken := GetCSRFToken(r)
+
+	threadIDStr := r.PathValue("tid")
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
+	if err != nil {
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	thread, err := s.queries.GetThreadForEdit(r.Context(), GetThreadForEditParams{
+		ID:   threadID,
+		ID_2: user.ID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	s.renderTemplate(w, r, "edit-thread.html", map[string]interface{}{
+		"Title":     BOARD_TITLE,
+		"Thread":    thread,
+		"Version":   s.version,
+		"CSRFToken": csrfToken,
+		"GitSha":    s.gitSha,
+	})
+	return
+}
+
+func (s *DiscussService) EditThreadPost(w http.ResponseWriter, r *http.Request) {
+	s.logger.ErrorContext(r.Context(), "EditThreadPost", slog.String("tid", r.PathValue("tid")), slog.String("pid", r.PathValue("pid")))
+
+	threadIDStr := r.PathValue("tid")
+	postIDStr := r.PathValue("pid")
+
+	if threadIDStr == "" {
+		s.logger.ErrorContext(r.Context(), "Missing thread ID")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	if postIDStr == "" {
+		s.logger.ErrorContext(r.Context(), "Missing post ID")
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "Invalid thread ID", slog.String("error", err.Error()))
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	postID, err := strconv.ParseInt(postIDStr, 10, 64)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "Invalid post ID", slog.String("error", err.Error()))
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		s.editThreadPostGET(w, r, threadID, postID)
+		return
+	case http.MethodPost:
+		s.editThreadPostPOST(w, r, threadID, postID)
+		return
+	default:
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+}
+
+func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Request, threadID, postID int64) {
+	if r.Method != http.MethodPost {
+		s.logger.ErrorContext(
+			r.Context(),
+			http.StatusText(http.StatusMethodNotAllowed),
+			slog.String("path", r.URL.Path),
+			slog.String("method", r.Method),
+		)
+		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse the form data
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	tmpbody := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
+	if tmpbody == "" {
+		s.logger.ErrorContext(r.Context(), "thread_body is empty", slog.String("thread_body", tmpbody))
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	body := parseHTMLLessStrict(parseMarkdownToHTML(tmpbody))
+
+	tp, err := s.queries.GetThreadPostForEdit(r.Context(), GetThreadPostForEditParams{
+		ID:   postID,
+		ID_2: user.ID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	if tp.Body.String != body {
+		err = s.queries.UpdateThreadPost(r.Context(), UpdateThreadPostParams{
+			ID:       postID,
+			Body:     pgtype.Text{Valid: true, String: body},
+			MemberID: user.ID,
+		})
+		if err != nil {
+			s.renderError(w, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Redirect to the thread page
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
+}
+
+func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Request, threadID, postID int64) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	s.logger.DebugContext(r.Context(), "editThreadPostGET", slog.Int64("threadID", threadID), slog.Int64("postID", postID), slog.Any("user", user))
+
+	post, err := s.queries.GetThreadPostForEdit(r.Context(), GetThreadPostForEditParams{
+		ID:   postID,
+		ID_2: user.ID,
+	})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	csrfToken := GetCSRFToken(r)
+
+	s.renderTemplate(w, r, "edit-thread-post.html", map[string]interface{}{
+		"Title":     BOARD_TITLE,
+		"Version":   s.version,
+		"CSRFToken": csrfToken,
+		"Post":      post,
+		"ThreadID":  threadID,
+		"GitSha":    s.gitSha,
+	})
 }
 
 func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
@@ -501,35 +779,39 @@ func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) 
 		return "", err
 	}
 
+	ctx := context.WithValue(r.Context(), "email", user.UserProfile.LoginName)
+	r = r.WithContext(ctx)
+
 	s.logger.Debug("get tailscale user email", slog.String("user", user.UserProfile.LoginName))
 	return user.UserProfile.LoginName, nil
 }
 
 // ListThreads displays the list of threads on the main page.
 func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" || r.Method != http.MethodGet {
+	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 
-	email, err := s.GetTailscaleUserEmail(r)
+	if r.Method != http.MethodGet {
+		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+	}
+
+	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
-	memberID, err := s.queries.CreateOrReturnID(r.Context(), email)
+	threads, err := s.queries.ListThreads(r.Context(), ListThreadsParams{
+		Email:    user.Email,
+		MemberID: user.ID,
+	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
-
-	threads, err := s.queries.ListThreads(r.Context(), memberID)
-	if err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -550,6 +832,9 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 			Views:   thread.Views,
 			Sticky:  thread.Sticky,
 			Locked:  thread.Locked,
+			CanEdit: pgtype.Bool{
+				Bool: thread.CanEdit,
+			},
 		}
 	}
 
@@ -563,45 +848,49 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 // ListThreadPosts displays the posts in a specific thread.
 func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request) {
-	s.logger.DebugContext(r.Context(), "entering ListThreadPosts()")
-	threadID, err := parseID(r.URL.Path)
+	requestID := uuid.New().String()
+	s.logger.InfoContext(r.Context(), "starting ListThreadPosts",
+		slog.String("request_id", requestID),
+		slog.String("path", r.URL.Path),
+		slog.String("method", r.Method))
+
+	defer s.logger.DebugContext(r.Context(), "finished ListThreadPosts", slog.String("request_id", requestID))
+
+	threadIDStr := r.PathValue("tid")
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
-		http.NotFound(w, r)
+		s.logger.ErrorContext(r.Context(), err.Error(), slog.String("thread_id", threadIDStr))
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
 	if r.Method != http.MethodGet {
-		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+		s.renderError(w, http.StatusMethodNotAllowed)
 		return
 	}
 
-	csrfToken, err := setCSRFToken(r, w)
-
-	email, err := s.GetTailscaleUserEmail(r)
+	user, err := GetUser(r)
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
-	_, err = s.queries.CreateOrReturnID(r.Context(), email)
+	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
-	if err != nil {
-		s.logger.Error(err.Error())
-		s.renderError(w, r, fmt.Errorf("%v", http.StatusText(http.StatusInternalServerError)), http.StatusInternalServerError)
-		return
-	}
-
 	subject = parseMarkdownToHTML(parseHTMLStrict(subject))
 
-	posts, err := s.queries.ListThreadPosts(r.Context(), threadID)
+	posts, err := s.queries.ListThreadPosts(r.Context(), ListThreadPostsParams{
+		ThreadID: threadID,
+		Email:    user.Email,
+	})
 	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -618,8 +907,11 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 			IsAdmin:    post.IsAdmin,
 			Email:      post.Email,
 			Subject:    pgtype.Text{},
+			CanEdit:    pgtype.Bool{Valid: true, Bool: post.CanEdit},
 		}
 	}
+
+	csrfToken := GetCSRFToken(r)
 
 	s.renderTemplate(w, r, "thread.html", map[string]interface{}{
 		"Title":       BOARD_TITLE,
@@ -629,26 +921,32 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"ID":        threadID,
 		"GitSha":    s.gitSha,
 		"Version":   s.version,
-		"CSRFToken": csrfToken,
+		"CSRFToken": template.HTML(csrfToken),
 	})
 }
 
 func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	s.logger.DebugContext(r.Context(), "entering ListMember()")
-	memberID, err := parseID(r.URL.Path)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	currentUserEmail, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		return
-	}
+	defer s.logger.DebugContext(r.Context(), "exiting ListMember()")
 
 	if r.Method != http.MethodGet {
-		s.renderError(w, r, fmt.Errorf("method not allowed"), http.StatusMethodNotAllowed)
+		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	memberIDStr := r.PathValue("mid")
+	memberID, err := strconv.ParseInt(memberIDStr, 10, 64)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -672,7 +970,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 			Subject:       template.HTML(mt.Subject),
 			Posts:         mt.Posts,
 			LastViewPosts: mt.LastViewPosts,
-			Dot:           mt.Dot,
+			Dot:           pgtype.Bool{Bool: mt.Dot},
 			Sticky:        mt.Sticky,
 			Locked:        mt.Locked,
 		}
@@ -688,7 +986,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
 		"Title":            BOARD_TITLE,
 		"Member":           member,
-		"CurrentUserEmail": currentUserEmail,
+		"CurrentUserEmail": user.Email,
 		"Threads":          memberThreadsParsed,
 		"GitSha":           s.gitSha,
 		"Version":          s.version,
@@ -702,8 +1000,7 @@ func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-func (s *DiscussService) renderError(w http.ResponseWriter, r *http.Request, err error, statusCode int) {
-	s.logger.ErrorContext(r.Context(), err.Error())
+func (s *DiscussService) renderError(w http.ResponseWriter, statusCode int) {
 	http.Error(w, http.StatusText(statusCode), statusCode)
 }
 
@@ -714,26 +1011,69 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken, err := setCSRFToken(r, w)
-
-	email, err := s.GetTailscaleUserEmail(r)
-	if err != nil {
-		s.renderError(w, r, err, http.StatusInternalServerError)
-		return
-	}
-
-	_, err = s.queries.CreateOrReturnID(r.Context(), email)
+	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
+	csrfToken := GetCSRFToken(r)
+
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
-		"User":      email,
+		"User":      user,
 		"Title":     BOARD_TITLE,
 		"CSRFToken": csrfToken,
 		"Version":   s.version,
 		"GitSha":    s.gitSha,
 	})
+}
+
+// UserMiddleware is a middleware that adds the user's email and ID to the request context.
+func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		email, err := s.GetTailscaleUserEmail(r)
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), err.Error())
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), "email", email)
+
+		id, err := s.queries.CreateOrReturnID(ctx, email)
+		if err != nil {
+			s.logger.ErrorContext(ctx, err.Error())
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			return
+		}
+
+		ctx = context.WithValue(ctx, "user_id", id)
+
+		s.logger.DebugContext(ctx, "UserMiddleware", slog.String("email", email), slog.Int64("user_id", id))
+
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Helper function to get the user from the request context
+func GetUser(r *http.Request) (User, error) {
+	ctx := r.Context()
+	var u User
+
+	if uid, ok := ctx.Value("user_id").(int64); ok {
+		u.ID = uid
+	} else {
+		return User{}, errors.New("user ID not found in context or invalid type")
+	}
+
+	if email, ok := ctx.Value("email").(string); ok {
+		u.Email = email
+	} else {
+		return User{}, errors.New("user email not found in context or invalid type")
+	}
+
+	return u, nil
 }

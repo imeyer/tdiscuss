@@ -1,13 +1,17 @@
-{{ template "header" .}}
+{{ template "header" . }}
 
 <span class="subject">{{ .Subject }}</span>
 
 {{ range .ThreadPosts }}
 <div class="threadpost-bubble">
     <div class="threadpost-header">
-        On {{ .DatePosted.Time | formatTimestamp}}, <a href="/member/{{ .MemberID.Int64 }}">{{ .Email.String }}</a> posted
+        On {{ .DatePosted.Time | formatTimestamp}}, <a href="/member/{{ .MemberID.Int64 }}">{{ .Email.String }}</a>
+        posted
     </div>
     <div class="threadpost-body">
+        {{ if .CanEdit.Bool }}
+        Hey mom! <a href="/thread/{{ .ThreadID.Int64 }}/{{ .ID }}/edit">Edit</a>
+        {{ end }}
         {{ .Body }}
     </div>
 </div>
@@ -27,4 +31,4 @@
 </div>
 </p>
 
-{{ template "footer" .}}
+{{ template "footer" . }}

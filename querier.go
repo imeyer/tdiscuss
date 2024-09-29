@@ -14,13 +14,17 @@ type Querier interface {
 	CreateThreadPost(ctx context.Context, arg CreateThreadPostParams) error
 	GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 	GetMemberId(ctx context.Context, email string) (int64, error)
+	GetThreadForEdit(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
+	GetThreadPostForEdit(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
 	GetThreadPostSequenceId(ctx context.Context) (int64, error)
 	GetThreadSequenceId(ctx context.Context) (int64, error)
 	GetThreadSubjectById(ctx context.Context, id int64) (string, error)
 	ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
-	ListThreadPosts(ctx context.Context, threadID int64) ([]ListThreadPostsRow, error)
-	ListThreads(ctx context.Context, memberID int64) ([]ListThreadsRow, error)
+	ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
+	ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
 	UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error
+	UpdateThread(ctx context.Context, arg UpdateThreadParams) error
+	UpdateThreadPost(ctx context.Context, arg UpdateThreadPostParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -1,105 +1,36 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
-
-func TestGenerateCSRFToken(t *testing.T) {
-	token, err := generateCSRFToken()
-	if err != nil {
-		t.Fatalf("generateCSRFToken() error = %v", err)
-	}
-	if len(token) == 0 {
-		t.Error("generateCSRFToken() returned empty token")
-	}
-
-	// Test error condition
-	oldRand := rand.Reader
-	rand.Reader = strings.NewReader("")
-	defer func() { rand.Reader = oldRand }()
-
-	_, err = generateCSRFToken()
-	if err == nil {
-		t.Error("generateCSRFToken() did not return error when rand.Read fails")
-	}
-}
-
-func TestSetCSRFToken(t *testing.T) {
-	tests := []struct {
-		name           string
-		tls            *tls.ConnectionState
-		forwardedProto string
-		wantSecure     bool
-	}{
-		{"HTTP request", nil, "", false},
-		{"HTTPS request", &tls.ConnectionState{}, "", true},
-		{"HTTP request with X-Forwarded-Proto: https", nil, "https", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r, _ := http.NewRequest("GET", "/", nil)
-			r.TLS = tt.tls
-			if tt.forwardedProto != "" {
-				r.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
-			}
-			w := httptest.NewRecorder()
-
-			token, err := setCSRFToken(r, w)
-			if err != nil {
-				t.Fatalf("setCSRFToken() error = %v", err)
-			}
-
-			cookies := w.Result().Cookies()
-			var csrfCookie *http.Cookie
-			for _, cookie := range cookies {
-				if cookie.Name == csrfCookieName {
-					csrfCookie = cookie
-					break
-				}
-			}
-
-			if csrfCookie == nil {
-				t.Fatal("CSRF cookie not set")
-			}
-
-			if csrfCookie.Value != token {
-				t.Errorf("Cookie value (%s) does not match returned token (%s)", csrfCookie.Value, token)
-			}
-
-			if !csrfCookie.HttpOnly {
-				t.Error("CSRF cookie is not HttpOnly")
-			}
-
-			if csrfCookie.SameSite != http.SameSiteStrictMode {
-				t.Error("CSRF cookie SameSite is not set to Strict")
-			}
-
-			if csrfCookie.Secure != tt.wantSecure {
-				t.Errorf("CSRF cookie Secure flag is %v, want %v", csrfCookie.Secure, tt.wantSecure)
-			}
-		})
-	}
-}
 
 func TestValidateCSRFToken(t *testing.T) {
 	// Setup
 	r, _ := http.NewRequest("POST", "/", nil)
 	w := httptest.NewRecorder()
 
-	token, _ := setCSRFToken(r, w)
+	token, err := setCSRFToken(w, r)
+	if err != nil {
+		t.Errorf("setCSRFToken() error = %v", err)
+	}
 
 	// Test valid token
 	r.Header.Set(csrfHeaderName, token)
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
 
-	err := validateCSRFToken(r)
+	err = validateCSRFToken(r)
 	if err != nil {
 		t.Errorf("validateCSRFToken() error = %v", err)
 	}
@@ -149,7 +80,6 @@ func TestCSRFMiddleware(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-
 	middleware := CSRFMiddleware(handler)
 
 	// Test GET request
@@ -166,11 +96,23 @@ func TestCSRFMiddleware(t *testing.T) {
 		t.Error("CSRF token not set in header for GET request")
 	}
 
+	// Get the token from the cookie
+	var cookieToken string
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == csrfCookieName {
+			cookieToken = cookie.Value
+			break
+		}
+	}
+	if cookieToken == "" {
+		t.Error("CSRF token not set in cookie for GET request")
+	}
+
 	// Test POST request with valid token
 	r, _ = http.NewRequest("POST", "/", strings.NewReader(""))
 	w = httptest.NewRecorder()
-	r.Header.Set(csrfHeaderName, token)
-	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
+	r.Header.Set(csrfHeaderName, cookieToken)
+	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: cookieToken})
 	middleware.ServeHTTP(w, r)
 
 	if w.Code != http.StatusOK {
@@ -181,7 +123,7 @@ func TestCSRFMiddleware(t *testing.T) {
 	r, _ = http.NewRequest("POST", "/", strings.NewReader(""))
 	w = httptest.NewRecorder()
 	r.Header.Set(csrfHeaderName, "invalid_token")
-	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
+	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: cookieToken})
 	middleware.ServeHTTP(w, r)
 
 	if w.Code != http.StatusForbidden {
@@ -224,9 +166,9 @@ func TestTokenExpiration(t *testing.T) {
 	// Create a request and set the CSRF token
 	r, _ := http.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
-	token, err := setCSRFToken(r, w)
+	token, err := setCSRFToken(w, r)
 	if err != nil {
-		t.Fatalf("setCSRFToken() error = %v", err)
+		t.Errorf("setCSRFToken() error = %v", err)
 	}
 
 	// Prepare a new request for validation
@@ -240,8 +182,8 @@ func TestTokenExpiration(t *testing.T) {
 		t.Errorf("validateCSRFToken() error = %v, token should be valid", err)
 	}
 
-	// Set current time to 23 hours from now
-	timeNow = func() time.Time { return now.Add(23 * time.Hour) }
+	// Set current time to 11 hours from now
+	timeNow = func() time.Time { return now.Add(11 * time.Hour) }
 
 	// Token should still be valid
 	err = validateCSRFToken(r)
@@ -249,12 +191,141 @@ func TestTokenExpiration(t *testing.T) {
 		t.Errorf("validateCSRFToken() error = %v, token should still be valid", err)
 	}
 
-	// Set current time to 25 hours from now
-	timeNow = func() time.Time { return now.Add(25 * time.Hour) }
+	// Set current time to 15 hours from now
+	timeNow = func() time.Time { return now.Add(15 * time.Hour) }
 
 	// Token should be expired
 	err = validateCSRFToken(r)
 	if err == nil {
 		t.Error("validateCSRFToken() did not return error for expired token")
 	}
+}
+
+func TestGetCSRFToken(t *testing.T) {
+	tests := []struct {
+		name     string
+		context  context.Context
+		expected string
+	}{
+		{
+			name:     "Token present in context",
+			context:  context.WithValue(context.Background(), csrfContextKey, "test_token"),
+			expected: "test_token",
+		},
+		{
+			name:     "Token not present in context",
+			context:  context.Background(),
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := http.NewRequest("GET", "/", nil)
+			r = r.WithContext(tt.context)
+
+			token := GetCSRFToken(r)
+			if token != tt.expected {
+				t.Errorf("GetCSRFToken() = %v, want %v", token, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSetCSRFToken(t *testing.T) {
+	tests := []struct {
+		name           string
+		tls            *tls.ConnectionState
+		forwardedProto string
+		wantSecure     bool
+	}{
+		{"HTTP request", nil, "", false},
+		{"HTTPS request", &tls.ConnectionState{}, "", true},
+		{"HTTP request with X-Forwarded-Proto: https", nil, "https", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := http.NewRequest("GET", "/", nil)
+			r.TLS = tt.tls
+			if tt.forwardedProto != "" {
+				r.Header.Set("X-Forwarded-Proto", tt.forwardedProto)
+			}
+			w := httptest.NewRecorder()
+
+			token, err := setCSRFToken(w, r)
+			if err != nil {
+				t.Errorf("setCSRFToken() error = %v", err)
+			}
+
+			cookies := w.Result().Cookies()
+			var csrfCookie *http.Cookie
+			for _, cookie := range cookies {
+				if cookie.Name == csrfCookieName {
+					csrfCookie = cookie
+					break
+				}
+			}
+
+			if csrfCookie == nil {
+				t.Fatal("CSRF cookie not set")
+			}
+
+			if csrfCookie.Value != token {
+				t.Errorf("Cookie value (%s) does not match returned token (%s)", csrfCookie.Value, token)
+			}
+
+			if !csrfCookie.HttpOnly {
+				t.Error("CSRF cookie is not HttpOnly")
+			}
+
+			if csrfCookie.SameSite != http.SameSiteStrictMode {
+				t.Error("CSRF cookie SameSite is not set to Strict")
+			}
+			assert.Equal(t, tt.wantSecure, csrfCookie.Secure, "CSRF cookie Secure flag is %v, want %v", csrfCookie.Secure, tt.wantSecure)
+
+			tokenStoreMu.RLock()
+			expiry, exists := tokenStore[token]
+			tokenStoreMu.RUnlock()
+
+			assert.True(t, exists, "Token not found in token store")
+
+			assert.Less(t, time.Now().Add(tokenExpiryTime).Sub(expiry), time.Second)
+		})
+	}
+}
+func TestGenerateCSRFToken(t *testing.T) {
+	// Test successful token generation
+	token := generateCSRFToken()
+	if len(token) == 0 {
+		t.Error("generateCSRFToken() returned empty token")
+	}
+	if len(token) != base64.StdEncoding.EncodedLen(csrfTokenLength) {
+		t.Errorf("generateCSRFToken() returned token of incorrect length: got %d, want %d", len(token), base64.StdEncoding.EncodedLen(csrfTokenLength))
+	}
+
+	// Test error condition
+	oldRand := rand.Reader
+	rand.Reader = strings.NewReader("")
+	defer func() { rand.Reader = oldRand }()
+
+	token = generateCSRFToken()
+	assert.Equal(t, "", token)
+}
+
+func TestInitCSRFLogger(t *testing.T) {
+	// Create a new logger
+	logger := slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{}))
+
+	// Initialize the CSRF logger
+	initCSRFLogger(logger)
+
+	// Check if the logger was set correctly
+	assert.Equal(t, logger, csrfLogger)
+
+	// Reset the logger to nil
+	initCSRFLogger(nil)
+
+	// Check if the logger was reset correctly
+	assert.Nil(t, csrfLogger)
 }

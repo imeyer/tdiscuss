@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -75,20 +78,45 @@ func HistogramHttpHandler(next http.Handler) http.HandlerFunc {
 
 		sanitizedPath := re.ReplaceAllString(r.URL.Path, "/:id")
 
-		next.ServeHTTP(rw, r)
-
 		duration := time.Since(start).Seconds()
-		// TODO:imeyer Sanitize r.URL.Path to the matched path expression
+
 		httpRequestDuration.WithLabelValues(sanitizedPath, r.Method, strconv.Itoa(rw.statusCode)).Observe(duration)
+
+		next.ServeHTTP(rw, r)
 	})
 }
 
 type statusRecorder struct {
 	http.ResponseWriter
 	statusCode int
+	written    int64
 }
 
 func (rec *statusRecorder) WriteHeader(code int) {
-	rec.statusCode = code
-	rec.ResponseWriter.WriteHeader(code)
+	if rec.statusCode == 0 {
+		rec.statusCode = code
+		rec.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (rec *statusRecorder) Write(b []byte) (int, error) {
+	if rec.statusCode == 0 {
+		rec.statusCode = http.StatusOK
+	}
+	n, err := rec.ResponseWriter.Write(b)
+	rec.written += int64(n)
+	return n, err
+}
+
+func (rec *statusRecorder) Flush() {
+	if f, ok := rec.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (rec *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := rec.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
 }

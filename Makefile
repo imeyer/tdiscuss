@@ -8,6 +8,8 @@ else
 	$(error Unsupported platform: $(UNAME_S))
 endif
 
+SUDO_C := $(shell which sudo)
+
 # Detect architecture
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M),arm64)
@@ -28,9 +30,9 @@ BAZEL_RELEASE_ARGS := build --config=silent --stamp --workspace_status_command="
 BAZEL_TEST_ARGS := test --config=silent --build_tests_only --test_output=errors
 BAZEL_RUN_ARGS := run
 # Change the hostname to anything you wish to use for testing
-BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev
+BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev -debug
 
-.PHONY: all clean test run run-binary genhtml release coverage
+.PHONY: all clean test run run-binary genhtml release coverage setup-db
 
 all: test build
 
@@ -63,6 +65,10 @@ genhtml:
 	@[ -d "$(shell pwd)/genhtml" ] && rm -rf "$(shell pwd)/genhtml" && echo "Removed previous genhtml/"
 	@genhtml --branch-coverage --output genhtml "$(shell $(BAZEL) info output_path)/_coverage/_coverage_report.dat" 2>&1>/dev/null
 
+clean-db:
+	@dropdb -U discuss discuss
+	@createdb -U discuss discuss
+	@psql -U discuss discuss < sqlc/schema.sql
 
 clean:
 	$(BAZEL) clean

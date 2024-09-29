@@ -37,7 +37,11 @@ func main() {
 
 	hostinfo.SetApp("tdiscuss")
 
-	logger := setupLogger()
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+
+	logger := newLogger(os.Stdout, &logLevel)
 	logger.Info("starting tdiscuss", slog.String("version", version), slog.String("git_sha", gitSha))
 
 	versionGauge.With(prometheus.Labels{"version": version, "git_commit": gitSha, "hostname": *hostname}).Set(1)

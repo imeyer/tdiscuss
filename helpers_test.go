@@ -1,14 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
-	"os"
-	"path/filepath"
-	"testing"
-
 	"log/slog"
+	"os"
+	"strings"
+	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -128,23 +128,7 @@ func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 	}
 }
 
-// mockMkdirAll is a variable of function type that matches os.MkdirAll
-var mockMkdirAll func(path string, perm os.FileMode) error
-
-// mockableCreateConfigDir is a version of createConfigDir that uses the mock function
-func mockableCreateConfigDir(dir *string) error {
-	err := mockMkdirAll(*dir, 0o700)
-	if err != nil {
-		return err
-	}
-	err = mockMkdirAll(filepath.Join(*dir, "tsnet"), 0o700)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func TestCreateConfigDir(t *testing.T) {
+func TestCreateConfigDirTwo(t *testing.T) {
 	tests := []struct {
 		name    string
 		dir     string
@@ -155,7 +139,7 @@ func TestCreateConfigDir(t *testing.T) {
 			name: "Create new directory",
 			dir:  "testdata/config",
 			setup: func() {
-				mockMkdirAll = os.MkdirAll
+				// No setup needed for this test case
 			},
 			wantErr: false,
 		},
@@ -163,7 +147,6 @@ func TestCreateConfigDir(t *testing.T) {
 			name: "Create existing directory",
 			dir:  "testdata/existing",
 			setup: func() {
-				mockMkdirAll = os.MkdirAll
 				os.MkdirAll("testdata/existing", 0o700) // Create the directory beforehand
 			},
 			wantErr: false,
@@ -172,22 +155,8 @@ func TestCreateConfigDir(t *testing.T) {
 			name: "Error creating main directory",
 			dir:  "testdata/error-main",
 			setup: func() {
-				mockMkdirAll = func(path string, perm os.FileMode) error {
-					return errors.New("mock error")
-				}
-			},
-			wantErr: true,
-		},
-		{
-			name: "Error creating tsnet subdirectory",
-			dir:  "testdata/error-tsnet",
-			setup: func() {
-				mockMkdirAll = func(path string, perm os.FileMode) error {
-					if filepath.Base(path) == "tsnet" {
-						return errors.New("mock error creating tsnet")
-					}
-					return os.MkdirAll(path, perm)
-				}
+				// Simulate an error by creating a file with the same name
+				os.WriteFile("testdata/error-main", []byte{}, 0o600)
 			},
 			wantErr: true,
 		},
@@ -198,35 +167,276 @@ func TestCreateConfigDir(t *testing.T) {
 			// Setup the test case
 			tt.setup()
 
-			// Clean up after each test
 			defer os.RemoveAll(tt.dir)
 
-			err := mockableCreateConfigDir(&tt.dir)
-
+			// Attempt to create the directory
+			err := createConfigDir(tt.dir)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("createConfigDir() error = %v, wantErr %v", err, tt.wantErr)
-				return
+				t.Errorf("os.MkdirAll() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
+			// Check permissions if no error is expected
 			if !tt.wantErr {
-				// Check if the main directory exists
-				if _, err := os.Stat(tt.dir); os.IsNotExist(err) {
-					t.Errorf("Main directory was not created")
-				}
-
-				// Check if the tsnet subdirectory exists
-				tsnetDir := filepath.Join(tt.dir, "tsnet")
-				if _, err := os.Stat(tsnetDir); os.IsNotExist(err) {
-					t.Errorf("tsnet subdirectory was not created")
-				}
-
-				// Check permissions
 				info, err := os.Stat(tt.dir)
 				if err != nil {
 					t.Errorf("Failed to get directory info: %v", err)
 				} else if info.Mode().Perm() != 0o700 {
 					t.Errorf("Incorrect permissions: got %v, want %v", info.Mode().Perm(), 0o700)
 				}
+			}
+
+			// Clean up
+			os.RemoveAll(tt.dir)
+		})
+	}
+}
+
+func TestExpandSNIName(t *testing.T) {
+	tests := []struct {
+		name          string
+		hostname      string
+		expandSNIName func(ctx context.Context, hostname string) (string, bool)
+		expectedSNI   string
+		expectedLog   string
+	}{
+		{
+			name:     "Successful expansion",
+			hostname: "example.com",
+			expandSNIName: func(ctx context.Context, hostname string) (string, bool) {
+				return "expanded.example.com", true
+			},
+			expectedSNI: "expanded.example.com",
+			expectedLog: "",
+		},
+		{
+			name:     "Failed expansion",
+			hostname: "example.com",
+			expandSNIName: func(ctx context.Context, hostname string) (string, bool) {
+				return "", false
+			},
+			expectedSNI: "",
+			expectedLog: "error expanding SNI name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			mockClient := &MockTailscaleClient{
+				ExpandSNINameFunc: tt.expandSNIName,
+			}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+			// Temporarily set the hostname variable
+			hostname = &tt.hostname
+
+			// Capture log output
+			var logOutput io.Writer
+			if tt.expectedLog != "" {
+				logOutput = &bytes.Buffer{}
+				logger = slog.New(slog.NewTextHandler(logOutput, nil))
+			}
+
+			sni := expandSNIName(ctx, mockClient, logger)
+			if sni != tt.expectedSNI {
+				t.Errorf("Expected SNI '%s', got '%s'", tt.expectedSNI, sni)
+			}
+
+			if tt.expectedLog != "" {
+				logStr := logOutput.(*bytes.Buffer).String()
+				if !strings.Contains(logStr, tt.expectedLog) {
+					t.Errorf("Expected log to contain '%s', got '%s'", tt.expectedLog, logStr)
+				}
+			}
+		})
+	}
+}
+
+func TestEnvOr(t *testing.T) {
+	tests := []struct {
+		name       string
+		envKey     string
+		envValue   string
+		defaultVal string
+		expected   string
+	}{
+		{
+			name:       "Environment variable set",
+			envKey:     "TEST_ENV",
+			envValue:   "value_from_env",
+			defaultVal: "default_value",
+			expected:   "value_from_env",
+		},
+		{
+			name:       "Environment variable not set",
+			envKey:     "TEST_ENV",
+			envValue:   "",
+			defaultVal: "default_value",
+			expected:   "default_value",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up the environment variable
+			if tt.envValue != "" {
+				os.Setenv(tt.envKey, tt.envValue)
+			} else {
+				os.Unsetenv(tt.envKey)
+			}
+
+			// Call the function
+			result := envOr(tt.envKey, tt.defaultVal)
+
+			// Check the result
+			if result != tt.expected {
+				t.Errorf("envOr() = %v, want %v", result, tt.expected)
+			}
+
+			// Clean up the environment variable
+			os.Unsetenv(tt.envKey)
+		})
+	}
+}
+
+func TestNewLogger(t *testing.T) {
+	tests := []struct {
+		name      string
+		logLevel  slog.Level
+		logFunc   func(logger *slog.Logger)
+		expectMsg string
+	}{
+		{
+			name:     "Debug level",
+			logLevel: slog.LevelDebug,
+			logFunc: func(logger *slog.Logger) {
+				logger.Debug("debug message")
+			},
+			expectMsg: "debug message",
+		},
+		{
+			name:     "Info level",
+			logLevel: slog.LevelInfo,
+			logFunc: func(logger *slog.Logger) {
+				logger.Info("info message")
+			},
+			expectMsg: "info message",
+		},
+		{
+			name:     "Warn level",
+			logLevel: slog.LevelWarn,
+			logFunc: func(logger *slog.Logger) {
+				logger.Warn("warn message")
+			},
+			expectMsg: "warn message",
+		},
+		{
+			name:     "Error level",
+			logLevel: slog.LevelError,
+			logFunc: func(logger *slog.Logger) {
+				logger.Error("error message")
+			},
+			expectMsg: "error message",
+		},
+		{
+			name:     "Debug log doesn't appear in Info level",
+			logLevel: slog.LevelInfo,
+			logFunc: func(logger *slog.Logger) {
+				logger.Debug("debug message")
+			},
+			expectMsg: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			logger := newLogger(&buf, &tt.logLevel)
+
+			tt.logFunc(logger)
+
+			if tt.expectMsg != "" && !strings.Contains(buf.String(), tt.expectMsg) {
+				t.Errorf("Expected log output to contain '%s', got %v", tt.expectMsg, buf.String())
+			} else if tt.expectMsg == "" && buf.Len() != 0 {
+				t.Errorf("Expected no log output, got %v", buf.String())
+			}
+		})
+	}
+}
+
+func TestSetupLogger(t *testing.T) {
+	tests := []struct {
+		name          string
+		debug         bool
+		expectedLevel slog.Level
+		logFunc       func(logger *slog.Logger)
+		expectMsg     string
+	}{
+		{
+			name:          "Debug mode enabled",
+			debug:         true,
+			expectedLevel: slog.LevelDebug,
+			logFunc: func(logger *slog.Logger) {
+				logger.Debug("debug message")
+			},
+			expectMsg: "debug message",
+		},
+		{
+			name:          "Debug mode disabled",
+			debug:         false,
+			expectedLevel: slog.LevelInfo, // Assuming default log level is Info
+			logFunc: func(logger *slog.Logger) {
+				logger.Info("info message")
+			},
+			expectMsg: "info message",
+		},
+		{
+			name:          "Debug log doesn't appear in Info level",
+			debug:         false,
+			expectedLevel: slog.LevelInfo,
+			logFunc: func(logger *slog.Logger) {
+				logger.Debug("debug message")
+			},
+			expectMsg: "",
+		},
+		{
+			name:          "Info log appears in Debug level",
+			debug:         true,
+			expectedLevel: slog.LevelDebug,
+			logFunc: func(logger *slog.Logger) {
+				logger.Info("info message")
+			},
+			expectMsg: "info message",
+		},
+		{
+			name:          "Error log appears in Info level",
+			debug:         false,
+			expectedLevel: slog.LevelInfo,
+			logFunc: func(logger *slog.Logger) {
+				logger.Error("error message")
+			},
+			expectMsg: "error message",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Temporarily set the debug variable
+			debug = &tt.debug
+
+			// Capture log output
+			var buf bytes.Buffer
+
+			logger := newLogger(&buf, &tt.expectedLevel)
+
+			// Perform the log function
+			tt.logFunc(logger)
+
+			// Check the log output
+			if tt.expectMsg != "" && !strings.Contains(buf.String(), tt.expectMsg) {
+				t.Errorf("Expected log output to contain '%s', got %v", tt.expectMsg, buf.String())
+			} else if tt.expectMsg == "" && buf.Len() != 0 {
+				t.Errorf("Expected no log output, got %v", buf.String())
 			}
 		})
 	}

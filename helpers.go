@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -69,9 +70,14 @@ func getTailscaleLocalClient(s *tsnet.Server, logger *slog.Logger) TailscaleClie
 	return lc
 }
 
-func newLogger(logLevel *slog.Level) *slog.Logger {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		AddSource: true,
+func newLogger(output io.Writer, logLevel *slog.Level) *slog.Logger {
+	var addSource bool = false
+	if *logLevel == slog.LevelDebug {
+		addSource = true
+	}
+
+	logger := slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{
+		AddSource: addSource,
 		Level:     logLevel,
 	}))
 	slog.SetDefault(logger)
@@ -125,13 +131,6 @@ func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, err
 
 	logger.Info("successfully connected to the database")
 	return dbconn, nil
-}
-
-func setupLogger() *slog.Logger {
-	if *debug {
-		logLevel = slog.LevelDebug
-	}
-	return newLogger(&logLevel)
 }
 
 func setupTemplates() *template.Template {

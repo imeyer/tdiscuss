@@ -25,6 +25,8 @@ go_library(
     ],
     embedsrcs = [
         "tmpl/edit-profile.html",
+        "tmpl/edit-thread.html",
+        "tmpl/edit-thread-post.html",
         "tmpl/error.html",
         "tmpl/footer.html",
         "tmpl/header.html",
@@ -42,6 +44,7 @@ go_library(
         "gitSha": "{STABLE_GIT_SHA}",
     },
     deps = [
+        "@com_github_google_uuid//:uuid",
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgconn",
         "@com_github_jackc_pgx_v5//pgtype",
@@ -49,6 +52,7 @@ go_library(
         "@com_github_microcosm_cc_bluemonday//:bluemonday",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_yuin_goldmark//:goldmark",
         "@com_github_yuin_goldmark//extension",
         "@com_github_yuin_goldmark//renderer/html",
@@ -76,6 +80,7 @@ go_test(
         "config_test.go",
         "csrf_test.go",
         "helpers_test.go",
+        "metrics_test.go",
         "parser_test.go",
         "server_test.go",
     ],
