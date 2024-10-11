@@ -528,12 +528,6 @@ func (s *DiscussService) EditThread(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusBadRequest)
@@ -602,12 +596,6 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	csrfToken := GetCSRFToken(r)
 
 	threadIDStr := r.PathValue("tid")
@@ -687,17 +675,6 @@ func (s *DiscussService) EditThreadPost(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Request, threadID, postID int64) {
-	if r.Method != http.MethodPost {
-		s.logger.ErrorContext(
-			r.Context(),
-			http.StatusText(http.StatusMethodNotAllowed),
-			slog.String("path", r.URL.Path),
-			slog.String("method", r.Method),
-		)
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	if err := r.ParseForm(); err != nil {
 		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusBadRequest)
@@ -747,11 +724,6 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Request, threadID, postID int64) {
-	if r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
-
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
