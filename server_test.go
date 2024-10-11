@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html/template"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,260 +24,6 @@ import (
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
 )
-
-func TestListThreads(t *testing.T) {
-	// Create a mock DiscussService
-	mockQueries := &MockQueries{}
-	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	tmpl := setupTemplates()
-
-	ds := &DiscussService{
-		tailClient: mockTailscaleClient,
-		logger:     logger,
-		dbconn:     &pgxpool.Pool{}, // Can be nil if not used directly
-		queries:    mockQueries,
-		tmpls:      tmpl,
-		httpsURL:   "https://example.com",
-		version:    "1.0",
-		gitSha:     "abc123",
-	}
-
-	// Create a new HTTP request
-	req, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Add a remote address to simulate a client
-	req.RemoteAddr = "127.0.0.1:12345"
-
-	// Create a ResponseRecorder to capture the response
-	rr := httptest.NewRecorder()
-
-	// Call the handler
-	handler := http.HandlerFunc(UserMiddleware(ds, http.HandlerFunc(ds.ListThreads)))
-	handler.ServeHTTP(rr, req)
-
-	// Check the status code
-	assert.Equal(t, http.StatusOK, rr.Code)
-
-	assert.Contains(t, rr.Body.String(), ds.version)
-}
-
-func TestListMember(t *testing.T) {
-	// Create mock instances
-	mockQueries := &MockQueries{}
-	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	tmpl := setupTemplates()
-	ds := &DiscussService{
-		tailClient: mockTailscaleClient,
-		logger:     logger,
-		dbconn:     nil, // Not needed for this test
-		queries:    mockQueries,
-		tmpls:      tmpl,
-		httpsURL:   "https://example.com",
-		version:    "1.0",
-		gitSha:     "abc123",
-	}
-
-	tests := []struct {
-		name               string
-		method             string
-		url                string
-		mid                string
-		setupMocks         func(*MockQueries)
-		expectedStatusCode int
-		expectedBody       string
-	}{
-		{
-			name:   "Valid request",
-			method: "GET",
-			url:    "/member/1",
-			mid:    "1",
-			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
-					return GetMemberRow{
-						Email:    "test@example.com",
-						Location: pgtype.Text{String: "Test Location", Valid: true},
-						ID:       id,
-					}, nil
-				}
-				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
-					return []ListMemberThreadsRow{
-						{
-							ThreadID:       1,
-							DateLastPosted: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-							ID:             pgtype.Int8{Valid: true, Int64: 1},
-							Email:          pgtype.Text{Valid: true, String: "test@example.com"},
-							Subject:        "Test Subject",
-						},
-					}, nil
-				}
-			},
-			expectedStatusCode: http.StatusOK,
-			expectedBody:       "Test Location",
-		},
-		{
-			name:   "Invalid member ID",
-			method: "GET",
-			url:    "/member/invalid",
-			setupMocks: func(mq *MockQueries) {
-				// No setup needed
-			},
-			expectedStatusCode: http.StatusBadRequest,
-			expectedBody:       http.StatusText(http.StatusBadRequest),
-		},
-		{
-			name:   "Method not allowed",
-			method: "POST",
-			url:    "/member/1",
-			mid:    "1",
-			setupMocks: func(mq *MockQueries) {
-				// No setup needed
-			},
-			expectedStatusCode: http.StatusMethodNotAllowed,
-			expectedBody:       "Method Not Allowed\n",
-		},
-		{
-			name:   "GetMember query error",
-			method: "GET",
-			url:    "/member/1",
-			mid:    "1",
-			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
-					return GetMemberRow{}, errors.New("database error")
-				}
-			},
-			expectedStatusCode: http.StatusInternalServerError,
-			expectedBody:       http.StatusText(http.StatusInternalServerError),
-		},
-		{
-			name:   "ListMemberThreads query error",
-			method: "GET",
-			url:    "/member/1",
-			mid:    "1",
-			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
-					return GetMemberRow{
-						Email:    "test@example.com",
-						Location: pgtype.Text{String: "Test Location", Valid: true},
-						ID:       id,
-					}, nil
-				}
-				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
-					return nil, errors.New("database error")
-				}
-			},
-			expectedStatusCode: http.StatusInternalServerError,
-			expectedBody:       http.StatusText(http.StatusInternalServerError),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset mock queries for each test
-			mockQueries.getMemberFunc = nil
-			mockQueries.listMemberThreadsFunc = nil
-			mockQueries.CreateOrReturnIDFunc = nil
-
-			// Setup mocks
-			tt.setupMocks(mockQueries)
-
-			mockQueries.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-				return 1, nil
-			}
-
-			// Create a new HTTP request
-			req, err := http.NewRequest(tt.method, tt.url, nil)
-			assert.Nil(t, err)
-
-			req.SetPathValue("mid", tt.mid)
-
-			// Add a remote address to simulate a client
-			req.RemoteAddr = "127.0.0.1:12345"
-
-			// Create a ResponseRecorder to capture the response
-			rr := httptest.NewRecorder()
-
-			// Call the handler
-			handler := UserMiddleware(ds, http.HandlerFunc(ds.ListMember))
-			handler.ServeHTTP(rr, req)
-
-			// Check the status code
-			assert.Equal(t, tt.expectedStatusCode, rr.Code)
-
-			// Check the response body
-			assert.Contains(t, rr.Body.String(), tt.expectedBody)
-		})
-	}
-}
-
-func TestGetTailscaleUserEmail(t *testing.T) {
-	tests := []struct {
-		name           string
-		remoteAddr     string
-		mockWhoIsFunc  func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
-		expectedEmail  string
-		expectedErr    error
-		expectedLogMsg string
-	}{
-		{
-			name:       "Valid email",
-			remoteAddr: "127.0.0.1:12345",
-			mockWhoIsFunc: func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
-				return &apitype.WhoIsResponse{
-					UserProfile: &tailcfg.UserProfile{
-						LoginName: "test@example.com",
-					},
-				}, nil
-			},
-			expectedEmail:  "test@example.com",
-			expectedErr:    nil,
-			expectedLogMsg: "get tailscale user email",
-		},
-		{
-			name:       "WhoIs error",
-			remoteAddr: "127.0.0.1:12345",
-			mockWhoIsFunc: func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
-				return nil, errors.New("WhoIs error")
-			},
-			expectedEmail:  "",
-			expectedErr:    errors.New("WhoIs error"),
-			expectedLogMsg: "get tailscale user email",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockTailscaleClient := &MockTailscaleClient{
-				WhoIsFunc: tt.mockWhoIsFunc,
-			}
-			var logLevel slog.Level = slog.LevelInfo
-			logger := newLogger(io.Discard, &logLevel)
-			ds := &DiscussService{
-				tailClient: mockTailscaleClient,
-				logger:     logger,
-			}
-
-			req, err := http.NewRequest("GET", "/", nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			req.RemoteAddr = tt.remoteAddr
-
-			email, err := ds.GetTailscaleUserEmail(req)
-
-			assert.Equal(t, tt.expectedEmail, email)
-			if tt.expectedErr != nil {
-				assert.EqualError(t, err, tt.expectedErr.Error())
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
 
 func TestEditThread(t *testing.T) {
 	mockQueries := &MockQueries{}
@@ -307,7 +55,36 @@ func TestEditThread(t *testing.T) {
 		expectedBody       string
 	}{
 		{
-			name:   "Valid request",
+			name:     "Valid GET request",
+			method:   "GET",
+			url:      "/thread/1/edit",
+			tid:      "1",
+			formData: nil,
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadForEditFunc = func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {
+					return GetThreadForEditRow{
+						Email:        pgtype.Text{String: "test@example.com", Valid: true},
+						Body:         pgtype.Text{String: "Original bbnody", Valid: true},
+						ThreadPostID: pgtype.Int8{Valid: true, Int64: 2},
+						Subject:      "Test SSSSASASubject",
+					}, nil
+				}
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return &apitype.WhoIsResponse{
+						UserProfile: &tailcfg.UserProfile{
+							LoginName: "test@example.com",
+						},
+					}, nil
+				}
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
+					return 1, nil
+				}
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "Original body",
+		},
+		{
+			name:   "Valid POST request",
 			method: "POST",
 			url:    "/thread/1/edit",
 			tid:    "1",
@@ -395,6 +172,7 @@ func TestEditThread(t *testing.T) {
 			mockQueries.CreateOrReturnIDFunc = nil
 			mockQueries.UpdateThreadFunc = nil
 			mockQueries.UpdateThreadPostFunc = nil
+			mockQueries.GetThreadForEditFunc = nil
 			mockTailscaleClient.WhoIsFunc = nil
 
 			// Setup mocks
@@ -445,6 +223,7 @@ func TestEditThread(t *testing.T) {
 
 			// Check the response body
 			if tt.expectedBody != "" {
+				t.Log(tt)
 				assert.Contains(t, rr.Body.String(), tt.expectedBody)
 			}
 
@@ -541,6 +320,28 @@ func TestEditThreadPost(t *testing.T) {
 			url:                "/thread/invalid/2/edit",
 			tid:                "invalid",
 			pid:                "2",
+			formData:           nil,
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:               "No thread ID",
+			method:             "POST",
+			url:                "/thread//2/edit",
+			tid:                "",
+			pid:                "2",
+			formData:           nil,
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:               "No thread post ID",
+			method:             "POST",
+			url:                "/thread/1//edit",
+			tid:                "1",
+			pid:                "",
 			formData:           nil,
 			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
 			expectedStatusCode: http.StatusBadRequest,
@@ -691,6 +492,582 @@ func TestEditThreadPost(t *testing.T) {
 	}
 }
 
+func TestEditThreadPostGET(t *testing.T) {
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	tmpl := setupTemplates()
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     nil, // Not needed for this test
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
+	}
+
+	tests := []struct {
+		name               string
+		threadID           int64
+		postID             int64
+		setupMocks         func(*MockQueries, *MockTailscaleClient)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name:     "Valid request",
+			threadID: 1,
+			postID:   2,
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadPostForEditFunc = func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
+					return GetThreadPostForEditRow{
+						ID:   arg.ID,
+						Body: pgtype.Text{String: "Mock Body", Valid: true},
+					}, nil
+				}
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "Mock Body",
+		},
+		{
+			name:     "GetUser error",
+			threadID: 1,
+			postID:   2,
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return nil, errors.New("WhoIs error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+		{
+			name:     "GetThreadPostForEdit error",
+			threadID: 1,
+			postID:   2,
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadPostForEditFunc = func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
+					return GetThreadPostForEditRow{}, errors.New("GetThreadPostForEdit error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock queries and tailscale client for each test
+			mockQueries.GetThreadPostForEditFunc = nil
+			mockTailscaleClient.WhoIsFunc = nil
+
+			// Setup mocks
+			tt.setupMocks(mockQueries, mockTailscaleClient)
+
+			// Create a new HTTP request
+			req, err := http.NewRequest("GET", fmt.Sprintf("/thread/%d/%d/edit", tt.threadID, tt.postID), nil)
+			assert.Nil(t, err)
+
+			req.SetPathValue("tid", strconv.FormatInt(tt.threadID, 10))
+			req.SetPathValue("pid", strconv.FormatInt(tt.postID, 10))
+
+			// Add a remote address to simulate a client
+			req.RemoteAddr = "127.0.0.1:12345"
+
+			// Create a ResponseRecorder to capture the response
+			rr := httptest.NewRecorder()
+
+			// Call the handler
+			handler := UserMiddleware(ds, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ds.editThreadPostGET(w, r, tt.threadID, tt.postID)
+			}))
+			handler.ServeHTTP(rr, req)
+
+			// Check the status code
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
+
+			// Check the response body
+			if tt.expectedBody != "" {
+				assert.Contains(t, rr.Body.String(), tt.expectedBody)
+			}
+		})
+	}
+}
+
+func TestGetTailscaleUserEmail(t *testing.T) {
+	tests := []struct {
+		name           string
+		remoteAddr     string
+		mockWhoIsFunc  func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
+		expectedEmail  string
+		expectedErr    error
+		expectedLogMsg string
+	}{
+		{
+			name:       "Valid email",
+			remoteAddr: "127.0.0.1:12345",
+			mockWhoIsFunc: func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+				return &apitype.WhoIsResponse{
+					UserProfile: &tailcfg.UserProfile{
+						LoginName: "test@example.com",
+					},
+				}, nil
+			},
+			expectedEmail:  "test@example.com",
+			expectedErr:    nil,
+			expectedLogMsg: "get tailscale user email",
+		},
+		{
+			name:       "WhoIs error",
+			remoteAddr: "127.0.0.1:12345",
+			mockWhoIsFunc: func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+				return nil, errors.New("WhoIs error")
+			},
+			expectedEmail:  "",
+			expectedErr:    errors.New("WhoIs error"),
+			expectedLogMsg: "get tailscale user email",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockTailscaleClient := &MockTailscaleClient{
+				WhoIsFunc: tt.mockWhoIsFunc,
+			}
+			var logLevel slog.Level = slog.LevelInfo
+			logger := newLogger(io.Discard, &logLevel)
+			ds := &DiscussService{
+				tailClient: mockTailscaleClient,
+				logger:     logger,
+			}
+
+			req, err := http.NewRequest("GET", "/", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.RemoteAddr = tt.remoteAddr
+
+			email, err := ds.GetTailscaleUserEmail(req)
+
+			assert.Equal(t, tt.expectedEmail, email)
+			if tt.expectedErr != nil {
+				assert.EqualError(t, err, tt.expectedErr.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+func TestGetUser(t *testing.T) {
+	tests := []struct {
+		name          string
+		contextValues map[string]interface{}
+		expectedUser  User
+		expectedError error
+	}{
+		{
+			name: "Valid user ID and email",
+			contextValues: map[string]interface{}{
+				"user_id": int64(1),
+				"email":   "test@example.com",
+			},
+			expectedUser: User{
+				ID:    1,
+				Email: "test@example.com",
+			},
+			expectedError: nil,
+		},
+		{
+			name: "Missing user ID",
+			contextValues: map[string]interface{}{
+				"email": "test@example.com",
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("user ID not found in context or invalid type"),
+		},
+		{
+			name: "Invalid user ID type",
+			contextValues: map[string]interface{}{
+				"user_id": "invalid",
+				"email":   "test@example.com",
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("user ID not found in context or invalid type"),
+		},
+		{
+			name: "Missing email",
+			contextValues: map[string]interface{}{
+				"user_id": int64(1),
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("user email not found in context or invalid type"),
+		},
+		{
+			name: "Invalid email type",
+			contextValues: map[string]interface{}{
+				"user_id": int64(1),
+				"email":   123,
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("user email not found in context or invalid type"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest("GET", "/", nil)
+			if err != nil {
+				t.Fatalf("failed to create request: %v", err)
+			}
+
+			req = req.WithContext(context.Background())
+
+			for key, value := range tt.contextValues {
+				req = req.WithContext(context.WithValue(req.Context(), key, value))
+			}
+
+			user, err := GetUser(req)
+
+			assert.ObjectsAreEqual(tt.expectedUser, user)
+
+			// If we expect an error, but the test fails or vice versa, print the error
+			if (err != nil && tt.expectedError == nil) || (err == nil && tt.expectedError != nil) || (err != nil && tt.expectedError != nil && err.Error() != tt.expectedError.Error()) {
+				t.Errorf("expected error %v, got %v", tt.expectedError, err)
+			}
+		})
+	}
+}
+func TestListMember(t *testing.T) {
+	// Create mock instances
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	tmpl := setupTemplates()
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     nil, // Not needed for this test
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
+	}
+
+	tests := []struct {
+		name               string
+		method             string
+		url                string
+		mid                string
+		setupMocks         func(*MockQueries)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name:   "Valid request",
+			method: "GET",
+			url:    "/member/1",
+			mid:    "1",
+			setupMocks: func(mq *MockQueries) {
+				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+					return GetMemberRow{
+						Email:    "test@example.com",
+						Location: pgtype.Text{String: "Test Location", Valid: true},
+						ID:       id,
+					}, nil
+				}
+				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
+					return []ListMemberThreadsRow{
+						{
+							ThreadID:       1,
+							DateLastPosted: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+							ID:             pgtype.Int8{Valid: true, Int64: 1},
+							Email:          pgtype.Text{Valid: true, String: "test@example.com"},
+							Subject:        "Test Subject",
+						},
+					}, nil
+				}
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "Test Location",
+		},
+		{
+			name:   "Invalid member ID",
+			method: "GET",
+			url:    "/member/invalid",
+			setupMocks: func(mq *MockQueries) {
+				// No setup needed
+			},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:   "Method not allowed",
+			method: "POST",
+			url:    "/member/1",
+			mid:    "1",
+			setupMocks: func(mq *MockQueries) {
+				// No setup needed
+			},
+			expectedStatusCode: http.StatusMethodNotAllowed,
+			expectedBody:       "Method Not Allowed\n",
+		},
+		{
+			name:   "GetMember query error",
+			method: "GET",
+			url:    "/member/1",
+			mid:    "1",
+			setupMocks: func(mq *MockQueries) {
+				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+					return GetMemberRow{}, errors.New("database error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+		{
+			name:   "ListMemberThreads query error",
+			method: "GET",
+			url:    "/member/1",
+			mid:    "1",
+			setupMocks: func(mq *MockQueries) {
+				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+					return GetMemberRow{
+						Email:    "test@example.com",
+						Location: pgtype.Text{String: "Test Location", Valid: true},
+						ID:       id,
+					}, nil
+				}
+				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
+					return nil, errors.New("database error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock queries for each test
+			mockQueries.getMemberFunc = nil
+			mockQueries.listMemberThreadsFunc = nil
+			mockQueries.CreateOrReturnIDFunc = nil
+
+			// Setup mocks
+			tt.setupMocks(mockQueries)
+
+			mockQueries.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
+				return 1, nil
+			}
+
+			// Create a new HTTP request
+			req, err := http.NewRequest(tt.method, tt.url, nil)
+			assert.Nil(t, err)
+
+			req.SetPathValue("mid", tt.mid)
+
+			// Add a remote address to simulate a client
+			req.RemoteAddr = "127.0.0.1:12345"
+
+			// Create a ResponseRecorder to capture the response
+			rr := httptest.NewRecorder()
+
+			// Call the handler
+			handler := UserMiddleware(ds, http.HandlerFunc(ds.ListMember))
+			handler.ServeHTTP(rr, req)
+
+			// Check the status code
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
+
+			// Check the response body
+			assert.Contains(t, rr.Body.String(), tt.expectedBody)
+		})
+	}
+}
+
+func TestListThreadPosts(t *testing.T) {
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	tmpl := setupTemplates()
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     nil, // Not needed for this test
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
+	}
+
+	tests := []struct {
+		name               string
+		method             string
+		url                string
+		tid                string
+		setupMocks         func(*MockQueries, *MockTailscaleClient)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name:   "Valid request",
+			method: "GET",
+			url:    "/thread/1",
+			tid:    "1",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadSubjectByIdFunc = func(ctx context.Context, threadID int64) (string, error) {
+					return "Test Subject", nil
+				}
+				mq.ListThreadPostsFunc = func(ctx context.Context, params ListThreadPostsParams) ([]ListThreadPostsRow, error) {
+					return []ListThreadPostsRow{
+						{
+							ID:         1,
+							DatePosted: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+							MemberID:   pgtype.Int8{Valid: true, Int64: 1},
+							Email:      pgtype.Text{Valid: true, String: "test@example.com"},
+							Body:       pgtype.Text{Valid: true, String: "Test Body"},
+							ThreadID:   pgtype.Int8{Valid: true, Int64: 1},
+							IsAdmin:    pgtype.Bool{Valid: true, Bool: false},
+							CanEdit:    true,
+						},
+					}, nil
+				}
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "Test Body",
+		},
+		{
+			name:   "Invalid thread ID",
+			method: "GET",
+			url:    "/thread/invalid",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				// No setup needed
+			},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:   "GetUser error",
+			method: "GET",
+			url:    "/thread/1",
+			tid:    "1",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return nil, errors.New("WhoIs error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+		{
+			name:   "GetThreadSubjectById query error",
+			method: "GET",
+			url:    "/thread/1",
+			tid:    "1",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadSubjectByIdFunc = func(ctx context.Context, threadID int64) (string, error) {
+					return "", errors.New("database error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+		{
+			name:   "ListThreadPosts query error",
+			method: "GET",
+			url:    "/thread/1",
+			tid:    "1",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mq.GetThreadSubjectByIdFunc = func(ctx context.Context, threadID int64) (string, error) {
+					return "Test Subject", nil
+				}
+				mq.ListThreadPostsFunc = func(ctx context.Context, params ListThreadPostsParams) ([]ListThreadPostsRow, error) {
+					return nil, errors.New("database error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock queries for each test
+			mockQueries.GetThreadSubjectByIdFunc = nil
+			mockQueries.ListThreadPostsFunc = nil
+
+			// Setup mocks
+			tt.setupMocks(mockQueries, mockTailscaleClient)
+
+			// Create a new HTTP request
+			req, err := http.NewRequest(tt.method, tt.url, nil)
+			assert.Nil(t, err)
+
+			req.SetPathValue("tid", tt.tid)
+
+			// Add a remote address to simulate a client
+			req.RemoteAddr = "127.0.0.1:12345"
+
+			// Create a ResponseRecorder to capture the response
+			rr := httptest.NewRecorder()
+
+			// Call the handler
+			handler := UserMiddleware(ds, http.HandlerFunc(ds.ListThreadPosts))
+			handler.ServeHTTP(rr, req)
+
+			// Check the status code
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
+
+			// Check the response body
+			assert.Contains(t, rr.Body.String(), tt.expectedBody)
+		})
+	}
+}
+
+func TestListThreads(t *testing.T) {
+	// Create a mock DiscussService
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	tmpl := setupTemplates()
+
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     &pgxpool.Pool{}, // Can be nil if not used directly
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
+	}
+
+	// Create a new HTTP request
+	req, err := http.NewRequest("GET", "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Add a remote address to simulate a client
+	req.RemoteAddr = "127.0.0.1:12345"
+
+	// Create a ResponseRecorder to capture the response
+	rr := httptest.NewRecorder()
+
+	// Call the handler
+	handler := http.HandlerFunc(UserMiddleware(ds, http.HandlerFunc(ds.ListThreads)))
+	handler.ServeHTTP(rr, req)
+
+	// Check the status code
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	assert.Contains(t, rr.Body.String(), ds.version)
+}
+
 func TestNewDiscussService(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
@@ -703,29 +1080,117 @@ func TestNewDiscussService(t *testing.T) {
 
 	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha)
 
-	if ds.tailClient != mockTailscaleClient {
-		t.Errorf("expected tailClient to be %v, got %v", mockTailscaleClient, ds.tailClient)
+	assert.Equal(t, mockTailscaleClient, ds.tailClient, "expected tailClient to be %v, got %v", mockTailscaleClient, ds.tailClient)
+	assert.Equal(t, logger, ds.logger, "expected logger to be %v, got %v", logger, ds.logger)
+	assert.Equal(t, dbconn, ds.dbconn, "expected dbconn to be %v, got %v", dbconn, ds.dbconn)
+	assert.Equal(t, queries, ds.queries, "expected queries to be %v, got %v", queries, ds.queries)
+	assert.Equal(t, tmpl, ds.tmpls, "expected tmpls to be %v, got %v", tmpl, ds.tmpls)
+	assert.Equal(t, httpsURL, ds.httpsURL, "expected httpsURL to be %v, got %v", httpsURL, ds.httpsURL)
+	assert.Equal(t, version, ds.version, "expected version to be %v, got %v", version, ds.version)
+	assert.Equal(t, gitSha, ds.gitSha, "expected gitSha to be %v, got %v", gitSha, ds.gitSha)
+}
+
+func TestUserMiddleware(t *testing.T) {
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	tmpl := setupTemplates()
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     nil, // Not needed for this test
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
 	}
-	if ds.logger != logger {
-		t.Errorf("expected logger to be %v, got %v", logger, ds.logger)
+
+	tests := []struct {
+		name               string
+		setupMocks         func(*MockQueries, *MockTailscaleClient)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name: "Valid request",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return &apitype.WhoIsResponse{
+						UserProfile: &tailcfg.UserProfile{
+							LoginName: "test@example.com",
+						},
+					}, nil
+				}
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
+					return 1, nil
+				}
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "",
+		},
+		{
+			name: "GetTailscaleUserEmail error",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return nil, errors.New("WhoIs error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
+		{
+			name: "CreateOrReturnID error",
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return &apitype.WhoIsResponse{
+						UserProfile: &tailcfg.UserProfile{
+							LoginName: "test@example.com",
+						},
+					}, nil
+				}
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
+					return 0, errors.New("CreateOrReturnID error")
+				}
+			},
+			expectedStatusCode: http.StatusInternalServerError,
+			expectedBody:       http.StatusText(http.StatusInternalServerError),
+		},
 	}
-	if ds.dbconn != dbconn {
-		t.Errorf("expected dbconn to be %v, got %v", dbconn, ds.dbconn)
-	}
-	if ds.queries != queries {
-		t.Errorf("expected queries to be %v, got %v", queries, ds.queries)
-	}
-	if ds.tmpls != tmpl {
-		t.Errorf("expected tmpls to be %v, got %v", tmpl, ds.tmpls)
-	}
-	if ds.httpsURL != httpsURL {
-		t.Errorf("expected httpsURL to be %v, got %v", httpsURL, ds.httpsURL)
-	}
-	if ds.version != version {
-		t.Errorf("expected version to be %v, got %v", version, ds.version)
-	}
-	if ds.gitSha != gitSha {
-		t.Errorf("expected gitSha to be %v, got %v", gitSha, ds.gitSha)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock queries and tailscale client for each test
+			mockQueries.CreateOrReturnIDFunc = nil
+			mockTailscaleClient.WhoIsFunc = nil
+
+			// Setup mocks
+			tt.setupMocks(mockQueries, mockTailscaleClient)
+
+			// Create a new HTTP request
+			req, err := http.NewRequest("GET", "/", nil)
+			assert.Nil(t, err)
+
+			// Add a remote address to simulate a client
+			req.RemoteAddr = "127.0.0.1:12345"
+
+			// Create a ResponseRecorder to capture the response
+			rr := httptest.NewRecorder()
+
+			// Call the middleware
+			handler := UserMiddleware(ds, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			}))
+			handler.ServeHTTP(rr, req)
+
+			// Check the status code
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
+
+			// Check the response body
+			if tt.expectedBody != "" {
+				assert.Contains(t, rr.Body.String(), tt.expectedBody)
+			}
+		})
 	}
 }
 
@@ -758,14 +1223,16 @@ func (m *MockTx) Rollback(ctx context.Context) error {
 }
 
 type MockQueries struct {
-	inTransaction           bool
-	getMemberFunc           func(ctx context.Context, id int64) (GetMemberRow, error)
-	listMemberThreadsFunc   func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
-	CreateOrReturnIDFunc    func(ctx context.Context, email string) (int64, error)
-	GetThreadSequenceIdFunc func(ctx context.Context) (int64, error)
-	CreateThreadFunc        func(ctx context.Context, arg CreateThreadParams) error
-	UpdateThreadFunc        func(ctx context.Context, arg UpdateThreadParams) error
-	UpdateThreadPostFunc    func(ctx context.Context, arg UpdateThreadPostParams) error
+	inTransaction            bool
+	getMemberFunc            func(ctx context.Context, id int64) (GetMemberRow, error)
+	listMemberThreadsFunc    func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
+	CreateOrReturnIDFunc     func(ctx context.Context, email string) (int64, error)
+	ListThreadPostsFunc      func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
+	GetThreadSequenceIdFunc  func(ctx context.Context) (int64, error)
+	CreateThreadFunc         func(ctx context.Context, arg CreateThreadParams) error
+	UpdateThreadFunc         func(ctx context.Context, arg UpdateThreadParams) error
+	UpdateThreadPostFunc     func(ctx context.Context, arg UpdateThreadPostParams) error
+	GetThreadSubjectByIdFunc func(ctx context.Context, id int64) (string, error)
 	// arg contains the parameters required to fetch the thread for editing.
 	GetThreadForEditFunc     func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
 	GetThreadPostForEditFunc func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
@@ -795,11 +1262,11 @@ func (m *MockQueries) GetMember(ctx context.Context, id int64) (GetMemberRow, er
 
 	// Mock implementation
 	return GetMemberRow{
-		Email:      "test@example.com",
-		Location:   pgtype.Text{String: "Test Location", Valid: true},
+		Email:      "mock@example.com",
+		Location:   pgtype.Text{String: "Mock Location", Valid: true},
 		ID:         id,
 		DateJoined: pgtype.Timestamptz{Time: time.Now(), Valid: true},
-		PhotoUrl:   pgtype.Text{String: "http://example.com/photo.jpg", Valid: true},
+		PhotoUrl:   pgtype.Text{String: "http://mockxample.com/photo.jpg", Valid: true},
 	}, nil
 }
 
@@ -819,6 +1286,10 @@ func (m *MockQueries) GetThreadSequenceId(ctx context.Context) (int64, error) {
 }
 
 func (m *MockQueries) GetThreadSubjectById(ctx context.Context, id int64) (string, error) {
+	if m.GetThreadSubjectByIdFunc != nil {
+		return m.GetThreadSubjectByIdFunc(ctx, id)
+	}
+
 	// Mock implementation
 	return "Mock Thread Subject", nil
 }
@@ -830,23 +1301,23 @@ func (m *MockQueries) GetThreadForEdit(ctx context.Context, arg GetThreadForEdit
 
 	// Mock implementation
 	return GetThreadForEditRow{
-		Email:        pgtype.Text{String: "test@example.com", Valid: true},
-		Body:         pgtype.Text{String: "Test Body", Valid: true},
+		Email:        pgtype.Text{String: "mock@example.com", Valid: true},
+		Body:         pgtype.Text{String: "Mock Body", Valid: true},
 		ThreadPostID: pgtype.Int8{Valid: true, Int64: arg.ID},
-		Subject:      "Test Subject",
+		Subject:      "Mock Subject",
 		ThreadID:     arg.ID,
 	}, nil
 }
 
 func (m *MockQueries) GetThreadPostForEdit(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
-	if m.GetThreadForEditFunc != nil {
+	if m.GetThreadPostForEditFunc != nil {
 		return m.GetThreadPostForEditFunc(ctx, arg)
 	}
 
 	// Mock implementation
 	return GetThreadPostForEditRow{
 		ID:   arg.ID,
-		Body: pgtype.Text{String: "Test Body", Valid: true},
+		Body: pgtype.Text{String: "Mock Body", Valid: true},
 	}, nil
 }
 
@@ -862,7 +1333,10 @@ func (m *MockQueries) ListMemberThreads(ctx context.Context, memberID int64) ([]
 }
 
 func (m *MockQueries) ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error) {
-	// Mock implementation
+	if m.ListThreadPostsFunc != nil {
+		return m.ListThreadPostsFunc(ctx, arg)
+	}
+
 	return []ListThreadPostsRow{
 		// Populate with mock data
 	}, nil
@@ -875,13 +1349,13 @@ func (m *MockQueries) ListThreads(ctx context.Context, arg ListThreadsParams) ([
 			ThreadID:       1,
 			DateLastPosted: pgtype.Timestamptz{Time: time.Now(), Valid: true},
 			ID:             pgtype.Int8{Int64: 1, Valid: true},
-			Email:          pgtype.Text{String: "test@example.com", Valid: true},
+			Email:          pgtype.Text{String: "mock@example.com", Valid: true},
 			Lastid:         pgtype.Int8{Int64: 2, Valid: true},
-			Lastname:       pgtype.Text{String: "last@example.com", Valid: true},
-			Subject:        "Test Subject",
+			Lastname:       pgtype.Text{String: "mocklast@example.com", Valid: true},
+			Subject:        "Mock Subject",
 			Posts:          pgtype.Int4{Int32: 5, Valid: true},
 			Views:          pgtype.Int4{Int32: 100, Valid: true},
-			Body:           pgtype.Text{String: "Test Body", Valid: true},
+			Body:           pgtype.Text{String: "Mock Body", Valid: true},
 			LastViewPosts:  0,
 			Dot:            false,
 			Sticky:         pgtype.Bool{Bool: false, Valid: true},
@@ -928,9 +1402,10 @@ func (m *MockTailscaleClient) WhoIs(ctx context.Context, remoteAddr string) (*ap
 	if m.WhoIsFunc != nil {
 		return m.WhoIsFunc(ctx, remoteAddr)
 	}
+
 	return &apitype.WhoIsResponse{
 		UserProfile: &tailcfg.UserProfile{
-			LoginName: "test@example.com",
+			LoginName: "mock@example.com",
 		},
 	}, nil
 }
