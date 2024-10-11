@@ -640,27 +640,27 @@ func (s *DiscussService) EditThreadPost(w http.ResponseWriter, r *http.Request) 
 
 	if threadIDStr == "" {
 		s.logger.ErrorContext(r.Context(), "Missing thread ID")
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
 	if postIDStr == "" {
 		s.logger.ErrorContext(r.Context(), "Missing post ID")
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "Invalid thread ID", slog.String("error", err.Error()))
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "Invalid post ID", slog.String("error", err.Error()))
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -778,7 +778,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		s.renderError(w, http.StatusMethodNotAllowed)
 	}
 
 	user, err := GetUser(r)
@@ -843,7 +843,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error(), slog.String("thread_id", threadIDStr))
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -862,7 +862,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -914,7 +914,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodGet {
 		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		s.renderError(w, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -936,7 +936,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	memberThreads, err := s.queries.ListMemberThreads(r.Context(), memberID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -962,7 +962,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	member, err := s.queries.GetMember(r.Context(), memberID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -1018,7 +1018,7 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 		email, err := s.GetTailscaleUserEmail(r)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), err.Error())
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
 
@@ -1027,7 +1027,7 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 		id, err := s.queries.CreateOrReturnID(ctx, email)
 		if err != nil {
 			s.logger.ErrorContext(ctx, err.Error())
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
 
