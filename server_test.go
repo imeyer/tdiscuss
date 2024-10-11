@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"html/template"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,9 +189,7 @@ func TestListMember(t *testing.T) {
 
 			// Create a new HTTP request
 			req, err := http.NewRequest(tt.method, tt.url, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			assert.Nil(t, err)
 
 			req.SetPathValue("mid", tt.mid)
 
@@ -277,6 +277,182 @@ func TestGetTailscaleUserEmail(t *testing.T) {
 	}
 }
 
+func TestEditThread(t *testing.T) {
+	mockQueries := &MockQueries{}
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		AddSource: true,
+		Level:     logLevel,
+	}))
+	tmpl := setupTemplates()
+	ds := &DiscussService{
+		tailClient: mockTailscaleClient,
+		logger:     logger,
+		dbconn:     nil, // Not needed for this test
+		queries:    mockQueries,
+		tmpls:      tmpl,
+		httpsURL:   "https://example.com",
+		version:    "1.0",
+		gitSha:     "abc123",
+	}
+
+	tests := []struct {
+		name               string
+		method             string
+		url                string
+		tid                string
+		formData           url.Values
+		setupMocks         func(*MockQueries, *MockTailscaleClient)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name:   "Valid request",
+			method: "POST",
+			url:    "/thread/1/edit",
+			tid:    "1",
+			formData: url.Values{
+				"thread_subject": {"Updated subject"},
+				"thread_body":    {"Updated body"},
+			},
+			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
+				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
+					return &apitype.WhoIsResponse{
+						UserProfile: &tailcfg.UserProfile{
+							LoginName: "test@example.com",
+						},
+					}, nil
+				}
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
+					return 1, nil
+				}
+				mq.GetThreadForEditFunc = func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {
+					return GetThreadForEditRow{
+						Email:        pgtype.Text{String: "test@example.com", Valid: true},
+						Body:         pgtype.Text{String: "Original body", Valid: true},
+						ThreadPostID: pgtype.Int8{Valid: true, Int64: 2},
+						Subject:      "Test Subject",
+					}, nil
+				}
+				mq.UpdateThreadPostFunc = func(ctx context.Context, arg UpdateThreadPostParams) error {
+					return nil
+				}
+				mq.UpdateThreadFunc = func(ctx context.Context, arg UpdateThreadParams) error {
+					return nil
+				}
+			},
+			expectedStatusCode: http.StatusSeeOther,
+			expectedBody:       "",
+		},
+		{
+			name:               "Invalid method",
+			method:             "PUT",
+			url:                "/thread/1/edit",
+			tid:                "1",
+			formData:           nil,
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusMethodNotAllowed,
+			expectedBody:       http.StatusText(http.StatusMethodNotAllowed),
+		},
+		{
+			name:               "Invalid path",
+			method:             "POST",
+			url:                "/thread/1/",
+			tid:                "1",
+			formData:           nil,
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:               "Invalid thread ID",
+			method:             "POST",
+			url:                "/thread/invalid/edit",
+			tid:                "invalid",
+			formData:           nil,
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+		{
+			name:   "Parse form error",
+			method: "POST",
+			url:    "/thread/1/edit",
+			tid:    "1",
+			formData: url.Values{
+				"thread_body": {"Valid body"},
+				"subject":     {"Valid subject"},
+			},
+			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
+			expectedStatusCode: http.StatusBadRequest,
+			expectedBody:       http.StatusText(http.StatusBadRequest),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock queries and tailscale client for each test
+			mockQueries.CreateOrReturnIDFunc = nil
+			mockQueries.UpdateThreadFunc = nil
+			mockQueries.UpdateThreadPostFunc = nil
+			mockTailscaleClient.WhoIsFunc = nil
+
+			// Setup mocks
+			tt.setupMocks(mockQueries, mockTailscaleClient)
+
+			mockQueries.GetThreadForEditFunc = func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {
+				return GetThreadForEditRow{
+					Email:        pgtype.Text{String: "test@example.com", Valid: true},
+					Body:         pgtype.Text{String: "Original body", Valid: true},
+					ThreadPostID: pgtype.Int8{Valid: true, Int64: 2},
+					Subject:      "Test Subject",
+					ThreadID:     arg.ID,
+				}, nil
+			}
+
+			var req *http.Request
+			var err error
+			// Add form data if present
+			if tt.formData != nil {
+				req, err = http.NewRequest(tt.method, tt.url, strings.NewReader(tt.formData.Encode()))
+				assert.Nil(t, err)
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			} else {
+				req, err = http.NewRequest(tt.method, tt.url, nil)
+				assert.Nil(t, err)
+			}
+
+			// Corrupt the form data to trigger a parse error
+			if tt.name == "Parse form error" {
+				req.Body = io.NopCloser(strings.NewReader("%gh&%ij"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+
+			req.SetPathValue("tid", tt.tid)
+
+			// Add a remote address to simulate a client
+			req.RemoteAddr = "127.0.0.1:12345"
+
+			// Create a ResponseRecorder to capture the response
+			rr := httptest.NewRecorder()
+
+			// Call the handler
+			handler := UserMiddleware(ds, http.HandlerFunc(ds.EditThread))
+			handler.ServeHTTP(rr, req)
+
+			// Check the status code
+			assert.Equal(t, tt.expectedStatusCode, rr.Code)
+
+			// Check the response body
+			if tt.expectedBody != "" {
+				assert.Contains(t, rr.Body.String(), tt.expectedBody)
+			}
+
+			t.Logf("Test: %s, Status: %d, Body: %s", tt.name, rr.Code, rr.Body.String())
+		})
+	}
+}
+
 func TestEditThreadPost(t *testing.T) {
 	mockQueries := &MockQueries{}
 	mockTailscaleClient := &MockTailscaleClient{}
@@ -299,7 +475,7 @@ func TestEditThreadPost(t *testing.T) {
 		url                string
 		tid                string
 		pid                string
-		formData           map[string]string
+		formData           url.Values
 		setupMocks         func(*MockQueries, *MockTailscaleClient)
 		expectedStatusCode int
 		expectedBody       string
@@ -310,8 +486,8 @@ func TestEditThreadPost(t *testing.T) {
 			url:    "/thread/1/2/edit",
 			tid:    "1",
 			pid:    "2",
-			formData: map[string]string{
-				"thread_body": "Updated body",
+			formData: url.Values{
+				"thread_body": {"Updated body"},
 			},
 			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
 				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
@@ -387,8 +563,8 @@ func TestEditThreadPost(t *testing.T) {
 			url:    "/thread/1/2/edit",
 			tid:    "1",
 			pid:    "2",
-			formData: map[string]string{
-				"invalid": string([]byte{0xff}),
+			formData: url.Values{
+				"invalid": {string([]byte{0xff})},
 			},
 			setupMocks:         func(mq *MockQueries, mtc *MockTailscaleClient) {},
 			expectedStatusCode: http.StatusBadRequest,
@@ -400,8 +576,8 @@ func TestEditThreadPost(t *testing.T) {
 			url:    "/thread/1/2/edit",
 			tid:    "1",
 			pid:    "2",
-			formData: map[string]string{
-				"thread_body": "Updated body",
+			formData: url.Values{
+				"thread_body": {"Updated body"},
 			},
 			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
 				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
@@ -417,8 +593,8 @@ func TestEditThreadPost(t *testing.T) {
 			url:    "/thread/1/2/edit",
 			tid:    "1",
 			pid:    "2",
-			formData: map[string]string{
-				"thread_body": "Updated body",
+			formData: url.Values{
+				"thread_body": {"Updated body"},
 			},
 			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
 				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
@@ -441,8 +617,8 @@ func TestEditThreadPost(t *testing.T) {
 			url:    "/thread/1/2/edit",
 			tid:    "1",
 			pid:    "2",
-			formData: map[string]string{
-				"thread_body": "Updated body",
+			formData: url.Values{
+				"thread_body": {"Updated body"},
 			},
 			setupMocks: func(mq *MockQueries, mtc *MockTailscaleClient) {
 				mtc.WhoIsFunc = func(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
@@ -483,20 +659,14 @@ func TestEditThreadPost(t *testing.T) {
 
 			// Create a new HTTP request
 			req, err := http.NewRequest(tt.method, tt.url, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			assert.Nil(t, err)
 
 			req.SetPathValue("tid", tt.tid)
 			req.SetPathValue("pid", tt.pid)
 
 			// Add form data if present
 			if tt.formData != nil {
-				form := url.Values{}
-				for key, value := range tt.formData {
-					form.Add(key, value)
-				}
-				req.PostForm = form
+				req.PostForm = tt.formData
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
 
@@ -520,6 +690,58 @@ func TestEditThreadPost(t *testing.T) {
 		})
 	}
 }
+
+func TestNewDiscussService(t *testing.T) {
+	mockTailscaleClient := &MockTailscaleClient{}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	dbconn := &pgxpool.Pool{} // Mock or use a real connection if needed
+	queries := &MockQueries{}
+	tmpl := template.New("test")
+	httpsURL := "https://example.com"
+	version := "1.0"
+	gitSha := "abc123"
+
+	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha)
+
+	if ds.tailClient != mockTailscaleClient {
+		t.Errorf("expected tailClient to be %v, got %v", mockTailscaleClient, ds.tailClient)
+	}
+	if ds.logger != logger {
+		t.Errorf("expected logger to be %v, got %v", logger, ds.logger)
+	}
+	if ds.dbconn != dbconn {
+		t.Errorf("expected dbconn to be %v, got %v", dbconn, ds.dbconn)
+	}
+	if ds.queries != queries {
+		t.Errorf("expected queries to be %v, got %v", queries, ds.queries)
+	}
+	if ds.tmpls != tmpl {
+		t.Errorf("expected tmpls to be %v, got %v", tmpl, ds.tmpls)
+	}
+	if ds.httpsURL != httpsURL {
+		t.Errorf("expected httpsURL to be %v, got %v", httpsURL, ds.httpsURL)
+	}
+	if ds.version != version {
+		t.Errorf("expected version to be %v, got %v", version, ds.version)
+	}
+	if ds.gitSha != gitSha {
+		t.Errorf("expected gitSha to be %v, got %v", gitSha, ds.gitSha)
+	}
+}
+
+// MockAddr is a mock implementation of the net.Addr interface
+type MockAddr struct{}
+
+func (m *MockAddr) Network() string {
+	return "tcp"
+}
+
+func (m *MockAddr) String() string {
+	return "mock address"
+}
+
+// osExit is a variable to allow os.Exit to be mocked in tests
+var osExit = os.Exit
 
 //
 // Mocks
@@ -686,6 +908,7 @@ func (m *MockQueries) UpdateThreadPost(ctx context.Context, arg UpdateThreadPost
 	if m.UpdateThreadPostFunc != nil {
 		return m.UpdateThreadPostFunc(ctx, arg)
 	}
+
 	// Mock implementation
 	return nil
 }

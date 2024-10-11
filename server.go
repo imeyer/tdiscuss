@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"syscall"
 	"time"
@@ -142,10 +143,10 @@ func NewDiscussService(tailClient TailscaleClient,
 	}
 }
 
-func NewTsNetServer(dataDir *string) *tsnet.Server {
+func NewTsNetServer(dataDir *string, hostname string) *tsnet.Server {
 	return &tsnet.Server{
 		Dir:      filepath.Join(*dataDir, "tsnet"),
-		Hostname: *hostname,
+		Hostname: hostname,
 		UserLogf: tsnetlog.Discard,
 		Logf:     tsnetlog.Discard,
 	}
@@ -186,7 +187,7 @@ func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
 		logger.Info(fmt.Sprintf("creating configuration directory (%s) failed: %v", *dataDir, err), "data-dir", *dataDir)
 	}
 
-	s := NewTsNetServer(dataDir)
+	s := NewTsNetServer(dataDir, *hostname)
 
 	if *tsnetLog {
 		s.UserLogf = log.Printf
@@ -519,13 +520,10 @@ func (s *DiscussService) EditThread(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		s.editThreadGET(w, r)
-		return
 	case http.MethodPost:
 		s.editThreadPOST(w, r)
-		return
 	default:
 		s.renderError(w, http.StatusMethodNotAllowed)
-		return
 	}
 }
 
@@ -533,6 +531,21 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 	if r.Method != http.MethodPost {
 		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
 		s.renderError(w, http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	re := regexp.MustCompile(`^/thread/\d+/edit$`)
+	matches := re.FindStringSubmatch(r.URL.Path)
+	s.logger.DebugContext(r.Context(), "editThreadPOST", slog.String("path", r.URL.Path), slog.Any("matches", matches))
+	if len(matches) < 1 {
+		s.logger.ErrorContext(r.Context(), "Invalid path")
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
@@ -571,6 +584,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 			MemberID: user.ID,
 		})
 		if err != nil {
+			s.logger.ErrorContext(r.Context(), err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
@@ -665,13 +679,10 @@ func (s *DiscussService) EditThreadPost(w http.ResponseWriter, r *http.Request) 
 	switch r.Method {
 	case http.MethodGet:
 		s.editThreadPostGET(w, r, threadID, postID)
-		return
 	case http.MethodPost:
 		s.editThreadPostPOST(w, r, threadID, postID)
-		return
 	default:
 		s.renderError(w, http.StatusMethodNotAllowed)
-		return
 	}
 }
 
@@ -687,9 +698,9 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Parse the form data
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusInternalServerError)
+		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
