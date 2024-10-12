@@ -2,8 +2,6 @@
 
 set -euo pipefail
 
-set -x
-
 # Everything should match what's in go.mod
 GV=$(grep "^go" go.mod | awk '{print $2}' | tr -d 'v')
 

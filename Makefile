@@ -34,7 +34,7 @@ BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev -debug
 
 .PHONY: all clean test run run-binary genhtml release coverage setup-db
 
-all: test build
+all: check-go-versions test build
 
 build:
 	@echo "Building for $(PLATFORM)-$(ARCH)"
@@ -74,4 +74,4 @@ clean:
 	$(BAZEL) clean
 
 check-go-versions:
-	@bash check_go_versions.sh
+	@bash check-go-versions.sh

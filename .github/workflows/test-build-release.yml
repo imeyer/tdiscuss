@@ -1,0 +1,62 @@
+name: Test, Build, maybe Release
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  Test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tdiscuss
+        uses: actions/checkout@v4
+      - name: Go version check
+        run: make check-go-versions
+      - name: Test //...
+        run: bazelisk test --workspace_status_command="${PWD}/status.sh" //...
+
+  Build:
+    needs: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [darwin, linux]
+        goarch: [amd64, arm64]
+    steps:
+      - name: Check out tdiscuss
+        uses: actions/checkout@v4
+      - name: Build //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: |
+          bazelisk build --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bazel-bin/tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+
+  Release:
+    needs: Build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+    - name: Create Release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create ${GITHUB_REF#refs/tags/} \
+          --title "Release ${GITHUB_REF#refs/tags/}" \
+          --generate-notes
+    - name: Upload Release Assets
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        for artifact in tdiscuss-*; do
+          gh release upload ${GITHUB_REF#refs/tags/} $artifact/$artifact
+        done
