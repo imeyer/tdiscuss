@@ -34,7 +34,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bazel-bin/tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bazel-bin/tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}_/tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
 
   Release:
     needs: Build
@@ -44,15 +44,30 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@v4
+    - name: Set pre-release flag
+      id: release_type
+      run: |
+        if [[ ${{ github.ref }} == *beta* ]]; then
+          echo "type=pre-release" >> $GITHUB_OUTPUT
+        else
+          echo "type=release" >> $GITHUB_OUTPUT
+        fi
     - name: Download artifacts
       uses: actions/download-artifact@v4
     - name: Create Release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        gh release create ${GITHUB_REF#refs/tags/} \
-          --title "Release ${GITHUB_REF#refs/tags/}" \
-          --generate-notes
+        if [[ "${{ steps.release_type.outputs.type }}" == "pre-release" ]]; then
+          gh release create ${GITHUB_REF#refs/tags/} \
+            --title "Release ${GITHUB_REF#refs/tags/}" \
+            --prerelease \
+            --generate-notes
+        else
+          gh release create ${GITHUB_REF#refs/tags/} \
+            --title "Release ${GITHUB_REF#refs/tags/}" \
+            --generate-notes
+        fi
     - name: Upload Release Assets
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
