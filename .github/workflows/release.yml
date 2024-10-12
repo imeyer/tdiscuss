@@ -21,7 +21,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.22.5'  # Adjust the Go version as needed
+        go-version: '1.23.1'  # Adjust the Go version as needed
 
     - name: Get Git Commit SHA
       id: git_info
@@ -29,9 +29,7 @@ jobs:
 
     - name: Build the project
       run: |
-        GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-        go build -ldflags "-X main.version=${{ github.ref_name }} -X main.gitCommit=${{ steps.git_info.outputs.sha }}" \
-        -o tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }} cmd/tdiscuss/main.go
+        bazelisk build --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
 
     - name: Create GitHub Release
       id: create_release
@@ -54,4 +52,3 @@ jobs:
         asset_path: ./tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
         asset_name: tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
         asset_content_type: application/octet-stream
-

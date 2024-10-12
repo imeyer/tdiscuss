@@ -72,3 +72,6 @@ clean-db:
 
 clean:
 	$(BAZEL) clean
+
+check-go-versions:
+	@bash check_go_versions.sh
