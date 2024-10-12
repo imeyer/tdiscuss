@@ -23,37 +23,6 @@
     total_threads        int DEFAULT 0                         -- member's total threads created
   );
 
-  CREATE TABLE pref_type
-  (
-    id      serial PRIMARY KEY,
-    name    text NOT NULL CHECK(name <> ''),
-    UNIQUE(name)
-  );
-  INSERT INTO pref_type (name) VALUES ('input');
-  INSERT INTO pref_type (name) VALUES ('checkbox');
-  INSERT INTO pref_type (name) VALUES ('textarea');
-
-  CREATE TABLE pref
-  (
-    id            serial PRIMARY KEY,
-    pref_type_id  int NOT NULL REFERENCES pref_type(id),
-    name          text NOT NULL CHECK(name <> ''),
-    display       text NOT NULL CHECK(display <> ''),
-    profile       bool NOT NULL DEFAULT false,
-    editable      bool NOT NULL DEFAULT true,
-    width         int,
-    ordering      int,
-    UNIQUE(name)
-  );
-
-  CREATE TABLE member_pref
-  (
-    id             serial PRIMARY KEY,
-    pref_id        int NOT NULL,
-    member_id      bigint NOT NULL,
-    value          text NOT NULL CHECK(value <> '')
-  );
-
   CREATE TABLE thread
   (
     id                 bigserial UNIQUE PRIMARY KEY,
@@ -91,46 +60,6 @@
     undot                 bool NOT NULL DEFAULT false,
     date_posted           timestamp,
     last_view_posts       int NOT NULL DEFAULT 0
-  );
-
-
-  CREATE TABLE message
-  (
-    id                 bigserial UNIQUE PRIMARY KEY,
-    member_id          bigint NOT NULL,                            -- id of member who created message
-    subject            varchar(200) NOT NULL CHECK(subject <> ''), -- subject of message
-    first_post_id      int,                                        -- first post id for message
-    date_posted        timestamp NOT NULL DEFAULT now(),           -- date message was created
-    posts              int DEFAULT 0,                              -- total posts in a message
-    views              int DEFAULT 0,                              -- total views to message
-    last_member_id     bigint NOT NULL,                            -- last member to reply
-    date_last_posted   timestamp NOT NULL DEFAULT now()
-  );
-
-  CREATE TABLE message_post
-  (
-    id            bigserial UNIQUE PRIMARY KEY,
-    message_id    int NOT NULL,            -- message post belongs to
-    date_posted   timestamp DEFAULT now(), -- time message post was created
-    member_id     bigint NOT NULL,            -- id of member who created message post
-    member_ip     cidr NOT NULL,           -- current ip address of member who created message post
-    body          text                     -- body text of message post
-  );
-
-  CREATE TABLE message_member
-  (
-    member_id	        bigint NOT NULL,
-    message_id	      bigint NOT NULL,
-    date_posted       timestamp,
-    last_view_posts   int NOT NULL DEFAULT 0,
-    deleted           bool NOT NULL DEFAULT false
-  );
-
-  CREATE TABLE favorite
-  (
-    id          serial PRIMARY KEY,
-    member_id   bigint NOT NULL,       -- member who this watched thread belongs to
-    thread_id   bigint NOT NULL        -- thread member is watching
   );
 
   CREATE OR REPLACE FUNCTION member_sync() RETURNS trigger AS $$
@@ -222,76 +151,6 @@
   END;
   $$ LANGUAGE plpgsql;
 
-
-  CREATE OR REPLACE FUNCTION message_post_sync() RETURNS trigger AS $$
-  BEGIN
-    IF TG_OP = 'DELETE' THEN
-      IF (SELECT count(*) FROM message_post WHERE message_id=OLD.message_id) > 1 THEN
-        UPDATE
-          message
-        SET
-          posts=posts-1,
-          first_post_id=(SELECT id FROM message_post WHERE message_id=OLD.message_id ORDER BY date_posted ASC LIMIT 1),
-          last_member_id=(SELECT member_id FROM message_post WHERE message_id=OLD.message_id ORDER BY date_posted DESC LIMIT 1),
-          date_last_posted=(SELECT date_posted FROM message_post WHERE message_id=OLD. message_id ORDER BY date_posted DESC LIMIT 1)
-        WHERE
-          id=OLD.message_id;
-      ELSEIF (SELECT posts FROM message WHERE id=OLD.message_id) = 1 THEN
-        DELETE FROM message_member WHERE message_id=OLD.message_id;
-        DELETE FROM message WHERE id=OLD.message_id;
-      END IF;
-      IF (SELECT count(*) FROM message_post WHERE member_id=OLD.member_id AND message_id=OLD.message_id) = 0 THEN
-        DELETE FROM message_member WHERE member_id=OLD.member_id AND message_id=OLD.message_id;
-      END IF;
-      RETURN OLD;
-    ELSEIF TG_OP = 'INSERT' THEN
-      UPDATE
-        message
-      SET
-        posts=posts+1,
-        first_post_id=(SELECT id FROM message_post WHERE message_id=NEW.message_id ORDER BY date_posted ASC LIMIT 1),
-        last_member_id=(SELECT member_id FROM message_post WHERE message_id=NEW.message_id ORDER BY date_posted DESC LIMIT 1),
-        date_last_posted=now()
-      WHERE
-        id=NEW.message_id;
-      IF NOT EXISTS (SELECT 1 FROM message_member WHERE member_id=NEW.member_id AND message_id=NEW.message_id) THEN
-        INSERT INTO
-          message_member (member_id,message_id,date_posted,last_view_posts)
-        VALUES
-          (NEW.member_id,NEW.message_id,now(),(SELECT posts FROM message WHERE id=NEW.message_id));
-      ELSE
-        UPDATE
-          message_member
-        SET
-          date_posted=now(),
-          last_view_posts=(SELECT posts FROM message WHERE id=NEW.message_id)
-        WHERE
-          member_id=NEW.member_id
-        AND
-          message_id=NEW.message_id;
-      END IF;
-      RETURN NEW;
-    END IF;
-    RETURN NULL;
-  END;
-  $$ LANGUAGE plpgsql;
-
-
-  CREATE OR REPLACE FUNCTION message_member_sync() RETURNS trigger AS $$
-  BEGIN
-    IF TG_OP = 'UPDATE' THEN
-      IF NEW.deleted IS TRUE THEN
-        IF (SELECT count(*) FROM message_member WHERE message_id=OLD.message_id AND deleted IS false) < 1 THEN
-          DELETE FROM message_member WHERE message_id=OLD.message_id;
-          DELETE FROM message_post WHERE id=OLD.message_id;
-        END IF;
-      END IF;
-    END IF;
-    RETURN NULL;
-  END;
-  $$ LANGUAGE plpgsql;
-
-
   CREATE OR REPLACE FUNCTION join(varchar,anyarray) RETURNS varchar AS $$
   DECLARE
     sep ALIAS FOR $1;
@@ -357,14 +216,6 @@
     FOR EACH ROW EXECUTE PROCEDURE member_sync();
   -- end member
 
-
-  -- start member_pref
-  ALTER TABLE member_pref ADD FOREIGN KEY (pref_id) REFERENCES pref(id);
-  ALTER TABLE member_pref ADD FOREIGN KEY (member_id) REFERENCES member(id);
-  CREATE UNIQUE INDEX mp_mi_pi_index ON member_pref(member_id,pref_id);
-  -- end member_pref
-
-
   -- start thread
   CREATE INDEX thread_member_id_index ON thread(member_id);
   CREATE INDEX thread_sticky_index ON thread(sticky);
@@ -405,46 +256,3 @@
   ALTER TABLE thread_member ADD FOREIGN KEY (member_id) REFERENCES member(id);
   ALTER TABLE thread_member ADD FOREIGN KEY (thread_id) REFERENCES thread(id);
   -- end thread_member
-
-
-  -- start message
-  CREATE INDEX message_member_id_index ON message(member_id);
-  CREATE INDEX message_date_last_posted_index ON message(date_last_posted);
-  CLUSTER message_date_last_posted_index ON message;
-
-  ALTER TABLE message ADD FOREIGN KEY (member_id) REFERENCES member(id);
-  ALTER TABLE message ADD FOREIGN KEY (last_member_id) REFERENCES member(id);
-  -- end message
-
-
-  -- start message_member
-  CREATE UNIQUE INDEX mm_mi_mi_lvr ON message_member(member_id,message_id,last_view_posts);
-
-  ALTER TABLE message_member ADD FOREIGN KEY (member_id) REFERENCES member(id);
-  ALTER TABLE message_member ADD FOREIGN KEY (message_id) REFERENCES message(id);
-
-  CREATE TRIGGER message_post_sync AFTER INSERT OR DELETE OR UPDATE ON message_member
-    FOR EACH ROW EXECUTE PROCEDURE message_member_sync();
-  -- end message_member
-
-
-  -- start message_post
-  CREATE INDEX message_post_member_id_index ON message_post(member_id);
-  CREATE INDEX message_post_message_id_index ON message_post(message_id);
-  CREATE INDEX message_post_date_posted_index ON message_post(date_posted);
-  CREATE INDEX message_post_member_ip ON message_post(member_ip);
-
-  ALTER TABLE message_post ADD FOREIGN KEY (member_id) REFERENCES member(id);
-  ALTER TABLE message_post ADD FOREIGN KEY (message_id) REFERENCES message(id);
-
-  CREATE TRIGGER message_post_sync AFTER INSERT OR DELETE ON message_post
-    FOR EACH ROW EXECUTE PROCEDURE message_post_sync();
-  -- end message_post
-
-
-  -- start favorites
-  CREATE INDEX favorite_member_id_thread_id_index ON favorite(member_id,thread_id);
-
-  ALTER TABLE favorite ADD FOREIGN KEY (member_id) REFERENCES member(id);
-  ALTER TABLE favorite ADD FOREIGN KEY (thread_id) REFERENCES thread(id);
-  -- end favorites
