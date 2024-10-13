@@ -15,6 +15,19 @@
             <input type="text" id="location" size="72px" name="location" value="{{ .Member.Location.String }}">
         </div>
         <div class="form-group">
+            <label for="pronouns">Pronouns</label>
+            <input type="text" id="pronouns" size="72px" name="pronouns" value="{{ .Member.Pronouns.String }}">
+        </div>
+        <div class="form-group">
+            <label for="preferred_name">Preferred Name</label>
+            <input type="text" id="preferred_name" size="72px" name="preferred_name"
+                value="{{ .Member.PreferredName.String }}">
+        </div>
+        <div class="form-group">
+            <label for="Bio">Bio</label>
+            <textarea id="bio" name="bio">{{ .Member.Bio.String }}</textarea>
+        </div>
+        <div class="form-group">
             <button type="submit">Update Profile</button>
         </div>
     </form>

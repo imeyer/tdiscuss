@@ -443,6 +443,9 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 }
 
 func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering EditMemberProfile")
+	defer s.logger.DebugContext(r.Context(), "exiting EditMemberProfile")
+
 	if r.Method != http.MethodPost && r.Method != http.MethodGet {
 		s.renderError(w, http.StatusMethodNotAllowed)
 		return
@@ -492,10 +495,13 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 	// Get the new photo URL from the form
 	newPhotoURL := r.Form.Get("photo_url")
 	newLocation := r.Form.Get("location")
+	newPreferredName := r.Form.Get("preferred_name")
+	newBio := r.Form.Get("bio")
+	newPronouns := r.Form.Get("pronouns")
 
 	// Update the member's profile
-	err = s.queries.UpdateMemberByEmail(r.Context(), UpdateMemberByEmailParams{
-		Email: user.Email,
+	err = s.queries.UpdateMemberProfileByID(r.Context(), UpdateMemberProfileByIDParams{
+		MemberID: user.ID,
 		PhotoUrl: pgtype.Text{
 			String: parseHTMLStrict(newPhotoURL),
 			Valid:  true,
@@ -504,8 +510,21 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 			String: parseHTMLStrict(newLocation),
 			Valid:  true,
 		},
+		PreferredName: pgtype.Text{
+			String: parseHTMLStrict(newPreferredName),
+			Valid:  true,
+		},
+		Bio: pgtype.Text{
+			String: parseHTMLStrict(newBio),
+			Valid:  true,
+		},
+		Pronouns: pgtype.Text{
+			String: parseHTMLStrict(newPronouns),
+			Valid:  true,
+		},
 	})
 	if err != nil {
+		s.logger.ErrorContext(r.Context(), "UpdateMemberProfileByID", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}

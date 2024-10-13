@@ -62,15 +62,38 @@ func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostPara
 }
 
 const getMember = `-- name: GetMember :one
-SELECT email, location, id, date_joined, photo_url FROM member WHERE id = $1
+SELECT
+  m.email,
+  mp.location,
+  m.id,
+  mp.bio,
+  mp.timezone,
+  mp.preferred_name,
+  mp.proper_name,
+  mp.pronouns,
+  m.date_joined,
+  mp.photo_url
+FROM
+  member m
+LEFT JOIN
+  member_profile mp
+ON
+  m.id = mp.member_id
+WHERE
+  m.id = $1
 `
 
 type GetMemberRow struct {
-	Email      string
-	Location   pgtype.Text
-	ID         int64
-	DateJoined pgtype.Timestamptz
-	PhotoUrl   pgtype.Text
+	Email         string
+	Location      pgtype.Text
+	ID            int64
+	Bio           pgtype.Text
+	Timezone      pgtype.Text
+	PreferredName pgtype.Text
+	ProperName    pgtype.Text
+	Pronouns      pgtype.Text
+	DateJoined    pgtype.Timestamptz
+	PhotoUrl      pgtype.Text
 }
 
 func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {
@@ -80,6 +103,11 @@ func (q *Queries) GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 		&i.Email,
 		&i.Location,
 		&i.ID,
+		&i.Bio,
+		&i.Timezone,
+		&i.PreferredName,
+		&i.ProperName,
+		&i.Pronouns,
 		&i.DateJoined,
 		&i.PhotoUrl,
 	)
@@ -454,21 +482,37 @@ func (q *Queries) ListThreads(ctx context.Context, arg ListThreadsParams) ([]Lis
 	return items, nil
 }
 
-const updateMemberByEmail = `-- name: UpdateMemberByEmail :exec
-UPDATE member SET
+const updateMemberProfileByID = `-- name: UpdateMemberProfileByID :exec
+UPDATE member_profile SET
   photo_url = $2,
-  location = $3
-WHERE email = $1
+  location = $3,
+  bio = $4,
+  timezone = $5,
+  preferred_name = $6,
+  pronouns = $7
+WHERE member_id = $1
 `
 
-type UpdateMemberByEmailParams struct {
-	Email    string
-	PhotoUrl pgtype.Text
-	Location pgtype.Text
+type UpdateMemberProfileByIDParams struct {
+	MemberID      int64
+	PhotoUrl      pgtype.Text
+	Location      pgtype.Text
+	Bio           pgtype.Text
+	Timezone      pgtype.Text
+	PreferredName pgtype.Text
+	Pronouns      pgtype.Text
 }
 
-func (q *Queries) UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error {
-	_, err := q.db.Exec(ctx, updateMemberByEmail, arg.Email, arg.PhotoUrl, arg.Location)
+func (q *Queries) UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error {
+	_, err := q.db.Exec(ctx, updateMemberProfileByID,
+		arg.MemberID,
+		arg.PhotoUrl,
+		arg.Location,
+		arg.Bio,
+		arg.Timezone,
+		arg.PreferredName,
+		arg.Pronouns,
+	)
 	return err
 }
 

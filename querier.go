@@ -22,7 +22,7 @@ type Querier interface {
 	ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
 	ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
 	ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
-	UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error
+	UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error
 	UpdateThread(ctx context.Context, arg UpdateThreadParams) error
 	UpdateThreadPost(ctx context.Context, arg UpdateThreadPostParams) error
 }

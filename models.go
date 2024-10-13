@@ -20,14 +20,22 @@ type Member struct {
 	Email            string
 	ID               int64
 	IsAdmin          pgtype.Bool
-	LastChat         pgtype.Timestamp
 	LastPost         pgtype.Timestamp
-	LastSearch       pgtype.Timestamp
 	LastView         pgtype.Timestamp
-	Location         pgtype.Text
-	PhotoUrl         pgtype.Text
 	TotalThreadPosts pgtype.Int4
 	TotalThreads     pgtype.Int4
+}
+
+type MemberProfile struct {
+	ID            int64
+	MemberID      int64
+	Location      pgtype.Text
+	Pronouns      pgtype.Text
+	PreferredName pgtype.Text
+	ProperName    pgtype.Text
+	PhotoUrl      pgtype.Text
+	Timezone      pgtype.Text
+	Bio           pgtype.Text
 }
 
 type Thread struct {

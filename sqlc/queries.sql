@@ -21,7 +21,25 @@ SELECT id::bigint, is_admin::boolean FROM createOrReturnID($1);
 SELECT id FROM member WHERE email = $1;
 
 -- name: GetMember :one
-SELECT email, location, id, date_joined, photo_url FROM member WHERE id = $1;
+SELECT
+  m.email,
+  mp.location,
+  m.id,
+  mp.bio,
+  mp.timezone,
+  mp.preferred_name,
+  mp.proper_name,
+  mp.pronouns,
+  m.date_joined,
+  mp.photo_url
+FROM
+  member m
+LEFT JOIN
+  member_profile mp
+ON
+  m.id = mp.member_id
+WHERE
+  m.id = $1;
 
 -- name: ListThreads :many
 SELECT
@@ -146,11 +164,15 @@ FROM thread_post tp LEFT JOIN member m
   ON tp.member_id=m.id
 WHERE tp.id=$1 AND m.id=$2;
 
--- name: UpdateMemberByEmail :exec
-UPDATE member SET
+-- name: UpdateMemberProfileByID :exec
+UPDATE member_profile SET
   photo_url = $2,
-  location = $3
-WHERE email = $1;
+  location = $3,
+  bio = $4,
+  timezone = $5,
+  preferred_name = $6,
+  pronouns = $7
+WHERE member_id = $1;
 
 -- name: UpdateThread :exec
 UPDATE thread SET

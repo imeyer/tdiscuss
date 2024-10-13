@@ -1409,7 +1409,7 @@ func (m *MockQueries) ListThreads(ctx context.Context, arg ListThreadsParams) ([
 	}, nil
 }
 
-func (m *MockQueries) UpdateMemberByEmail(ctx context.Context, arg UpdateMemberByEmailParams) error {
+func (m *MockQueries) UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error {
 	// Mock implementation
 	return nil
 }

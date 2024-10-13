@@ -21,8 +21,17 @@
         <td class="info-column">
             <div class="content-container">
                 <div class="content-row">
-                    {{ if .Member.Location.Valid }}
+                    {{ if ne .Member.Location.String "" }}
                     Location: {{ .Member.Location.String }}<br />
+                    {{ end }}
+                    {{ if ne .Member.Pronouns.String "" }}
+                    Pronouns: {{ .Member.Pronouns.String }}<br />
+                    {{ end }}
+                    {{ if ne .Member.PreferredName.String "" }}
+                    Preferred Name: {{ .Member.PreferredName.String }}<br />
+                    {{ end }}
+                    {{ if ne .Member.Bio.String "" }}
+                    Bio: {{ .Member.Bio.String }}<br />
                     {{ end }}
                     Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
                 </div>
