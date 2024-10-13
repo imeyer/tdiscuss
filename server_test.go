@@ -28,7 +28,7 @@ import (
 func TestEditThread(t *testing.T) {
 	mockQueries := &MockQueries{}
 	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+	logger := slog.New(slog.NewJSONHandler(io.Discard, &slog.HandlerOptions{
 		AddSource: true,
 		Level:     logLevel,
 	}))
@@ -76,8 +76,11 @@ func TestEditThread(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 1, nil
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{
+						ID:      1,
+						IsAdmin: true,
+					}, nil
 				}
 			},
 			expectedStatusCode: http.StatusOK,
@@ -100,8 +103,11 @@ func TestEditThread(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 1, nil
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{
+						ID:      1,
+						IsAdmin: true,
+					}, nil
 				}
 				mq.GetThreadForEditFunc = func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {
 					return GetThreadForEditRow{
@@ -235,7 +241,7 @@ func TestEditThread(t *testing.T) {
 func TestEditThreadPost(t *testing.T) {
 	mockQueries := &MockQueries{}
 	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
@@ -276,8 +282,11 @@ func TestEditThreadPost(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 1, nil
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{
+						ID:      1,
+						IsAdmin: true,
+					}, nil
 				}
 				mq.GetThreadPostForEditFunc = func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
 					return GetThreadPostForEditRow{
@@ -405,8 +414,8 @@ func TestEditThreadPost(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 0, errors.New("CreateOrReturnID error")
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{ID: 0, IsAdmin: false}, errors.New("CreateOrReturnID error")
 				}
 			},
 			expectedStatusCode: http.StatusInternalServerError,
@@ -429,8 +438,11 @@ func TestEditThreadPost(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 1, nil
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{
+						ID:      1,
+						IsAdmin: true,
+					}, nil
 				}
 				mq.UpdateThreadPostFunc = func(ctx context.Context, arg UpdateThreadPostParams) error {
 					return errors.New("UpdateThreadPost error")
@@ -495,7 +507,7 @@ func TestEditThreadPost(t *testing.T) {
 func TestEditThreadPostGET(t *testing.T) {
 	mockQueries := &MockQueries{}
 	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
@@ -660,6 +672,7 @@ func TestGetTailscaleUserEmail(t *testing.T) {
 		})
 	}
 }
+
 func TestGetUser(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -668,14 +681,16 @@ func TestGetUser(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "Valid user ID and email",
+			name: "Valid user ID, email, and is_admin",
 			contextValues: map[string]interface{}{
-				"user_id": int64(1),
-				"email":   "test@example.com",
+				"user_id":  int64(1),
+				"email":    "test@example.com",
+				"is_admin": true,
 			},
 			expectedUser: User{
-				ID:    1,
-				Email: "test@example.com",
+				ID:      1,
+				Email:   "test@example.com",
+				IsAdmin: true,
 			},
 			expectedError: nil,
 		},
@@ -685,7 +700,7 @@ func TestGetUser(t *testing.T) {
 				"email": "test@example.com",
 			},
 			expectedUser:  User{},
-			expectedError: errors.New("user ID not found in context or invalid type"),
+			expectedError: errors.New("user_id not found in context or invalid type"),
 		},
 		{
 			name: "Invalid user ID type",
@@ -694,7 +709,7 @@ func TestGetUser(t *testing.T) {
 				"email":   "test@example.com",
 			},
 			expectedUser:  User{},
-			expectedError: errors.New("user ID not found in context or invalid type"),
+			expectedError: errors.New("user_id not found in context or invalid type"),
 		},
 		{
 			name: "Missing email",
@@ -702,7 +717,7 @@ func TestGetUser(t *testing.T) {
 				"user_id": int64(1),
 			},
 			expectedUser:  User{},
-			expectedError: errors.New("user email not found in context or invalid type"),
+			expectedError: errors.New("email not found in context or invalid type"),
 		},
 		{
 			name: "Invalid email type",
@@ -711,7 +726,26 @@ func TestGetUser(t *testing.T) {
 				"email":   123,
 			},
 			expectedUser:  User{},
-			expectedError: errors.New("user email not found in context or invalid type"),
+			expectedError: errors.New("email not found in context or invalid type"),
+		},
+		{
+			name: "Missing is_admin",
+			contextValues: map[string]interface{}{
+				"user_id": int64(1),
+				"email":   "test@example.com",
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("is_admin not found in context or invalid type"),
+		},
+		{
+			name: "Invalid is_admin type",
+			contextValues: map[string]interface{}{
+				"user_id":  int64(1),
+				"email":    "test@example.com",
+				"is_admin": "invalid",
+			},
+			expectedUser:  User{},
+			expectedError: errors.New("is_admin not found in context or invalid type"),
 		},
 	}
 
@@ -739,6 +773,7 @@ func TestGetUser(t *testing.T) {
 		})
 	}
 }
+
 func TestListMember(t *testing.T) {
 	// Create mock instances
 	mockQueries := &MockQueries{}
@@ -859,8 +894,11 @@ func TestListMember(t *testing.T) {
 			// Setup mocks
 			tt.setupMocks(mockQueries)
 
-			mockQueries.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-				return 1, nil
+			mockQueries.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+				return CreateOrReturnIDRow{
+					ID:      1,
+					IsAdmin: true,
+				}, nil
 			}
 
 			// Create a new HTTP request
@@ -1070,7 +1108,7 @@ func TestListThreads(t *testing.T) {
 
 func TestNewDiscussService(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	dbconn := &pgxpool.Pool{} // Mock or use a real connection if needed
 	queries := &MockQueries{}
 	tmpl := template.New("test")
@@ -1093,7 +1131,7 @@ func TestNewDiscussService(t *testing.T) {
 func TestUserMiddleware(t *testing.T) {
 	mockQueries := &MockQueries{}
 	mockTailscaleClient := &MockTailscaleClient{}
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
@@ -1122,8 +1160,11 @@ func TestUserMiddleware(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 1, nil
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{
+						ID:      1,
+						IsAdmin: true,
+					}, nil
 				}
 			},
 			expectedStatusCode: http.StatusOK,
@@ -1149,8 +1190,8 @@ func TestUserMiddleware(t *testing.T) {
 						},
 					}, nil
 				}
-				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (int64, error) {
-					return 0, errors.New("CreateOrReturnID error")
+				mq.CreateOrReturnIDFunc = func(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+					return CreateOrReturnIDRow{ID: 0, IsAdmin: false}, errors.New("CreateOrReturnID error")
 				}
 			},
 			expectedStatusCode: http.StatusInternalServerError,
@@ -1226,7 +1267,7 @@ type MockQueries struct {
 	inTransaction            bool
 	getMemberFunc            func(ctx context.Context, id int64) (GetMemberRow, error)
 	listMemberThreadsFunc    func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
-	CreateOrReturnIDFunc     func(ctx context.Context, email string) (int64, error)
+	CreateOrReturnIDFunc     func(ctx context.Context, email string) (CreateOrReturnIDRow, error)
 	ListThreadPostsFunc      func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
 	GetThreadSequenceIdFunc  func(ctx context.Context) (int64, error)
 	CreateThreadFunc         func(ctx context.Context, arg CreateThreadParams) error
@@ -1238,11 +1279,15 @@ type MockQueries struct {
 	GetThreadPostForEditFunc func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
 }
 
-func (m *MockQueries) CreateOrReturnID(ctx context.Context, pEmail string) (int64, error) {
+func (m *MockQueries) CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error) {
 	if m.CreateOrReturnIDFunc != nil {
 		return m.CreateOrReturnIDFunc(ctx, pEmail)
 	}
-	return 1, nil
+
+	return CreateOrReturnIDRow{
+		ID:      1,
+		IsAdmin: true,
+	}, nil
 }
 
 func (m *MockQueries) CreateThread(ctx context.Context, arg CreateThreadParams) error {

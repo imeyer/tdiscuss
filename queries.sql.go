@@ -12,14 +12,19 @@ import (
 )
 
 const createOrReturnID = `-- name: CreateOrReturnID :one
-SELECT createOrReturnID($1)
+SELECT id::bigint, is_admin::boolean FROM createOrReturnID($1)
 `
 
-func (q *Queries) CreateOrReturnID(ctx context.Context, pEmail string) (int64, error) {
+type CreateOrReturnIDRow struct {
+	ID      int64
+	IsAdmin bool
+}
+
+func (q *Queries) CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error) {
 	row := q.db.QueryRow(ctx, createOrReturnID, pEmail)
-	var createorreturnid int64
-	err := row.Scan(&createorreturnid)
-	return createorreturnid, err
+	var i CreateOrReturnIDRow
+	err := row.Scan(&i.ID, &i.IsAdmin)
+	return i, err
 }
 
 const createThread = `-- name: CreateThread :exec

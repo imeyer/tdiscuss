@@ -12,7 +12,7 @@
     date_joined          timestamptz DEFAULT now(),            -- date of signup
     email                varchar NOT NULL CHECK(email <> ''),  -- email used to sign up
     id                   bigserial UNIQUE PRIMARY KEY,         -- id
-    is_admin             bool DEFAULT false,                   -- is admin?
+    is_admin             boolean DEFAULT false,          -- is admin?
     last_chat            timestamp,                            -- last time user chatted
     last_post            timestamp,                            -- last post to board
     last_search          timestamp,                            -- last time user searched
@@ -32,8 +32,8 @@
     first_post_id       int,                                -- first post id
     posts              int DEFAULT 0,                       -- total posts in a thread
     views              int DEFAULT 0,                       -- total views to thread
-    sticky             bool DEFAULT false,                  -- thread sticky flag
-    locked             bool DEFAULT false,                  -- thread locked flag
+    sticky             boolean DEFAULT false,                  -- thread sticky flag
+    locked             boolean DEFAULT false,                  -- thread locked flag
     last_member_id     bigint NOT NULL,                     -- last member who posted to thread
     date_last_posted   timestamptz NOT NULL DEFAULT now(),  -- time last post was entered
     indexed            bool NOT NULL DEFAULT false,         -- has been indexed: for search indexer
@@ -185,24 +185,43 @@
   $$ LANGUAGE plpgsql;
 
   CREATE OR REPLACE FUNCTION createOrReturnID(p_email VARCHAR(255))
-  RETURNS BIGINT AS $$
+  RETURNS TABLE (id BIGINT, is_admin BOOLEAN) AS $$
   DECLARE
       v_id BIGINT;
+      v_is_admin BOOLEAN;
+      v_member_count INTEGER;
   BEGIN
+      v_is_admin := false;
+
+      -- If there are no members, make this member an admin
+      SELECT count(member.id) INTO v_member_count
+      FROM member;
+
+      RAISE NOTICE 'initial v_member_count: %', v_member_count;
+
       -- Try to find the existing email
-      SELECT id INTO v_id
+      SELECT member.id, COALESCE(member.is_admin, false) INTO v_id, v_is_admin
       FROM member
-      WHERE email = p_email;
+      WHERE member.email = p_email;
+
+      RAISE NOTICE 'After SELECT: v_id = %, v_is_admin = %', v_id, v_is_admin;
+
+      IF v_member_count = 0 THEN
+          v_is_admin = true;
+      ELSE
+
+      END IF;
 
       -- If the email doesn't exist, create a new record
       IF v_id IS NULL THEN
-          INSERT INTO member (email)
-          VALUES (p_email)
-          RETURNING id INTO v_id;
+          INSERT INTO member (email, is_admin)
+          VALUES (p_email, v_is_admin)
+          RETURNING member.id, COALESCE(member.is_admin, false) INTO v_id, v_is_admin;
+          RAISE NOTICE 'After INSERT: v_id = %, v_is_admin = %', v_id, v_is_admin;
       END IF;
 
       -- Return the ID (either existing or newly created)
-      RETURN v_id;
+      RETURN QUERY SELECT v_id, v_is_admin;
   END;
   $$ LANGUAGE plpgsql;
 

@@ -9,7 +9,7 @@ import (
 )
 
 type Querier interface {
-	CreateOrReturnID(ctx context.Context, pEmail string) (int64, error)
+	CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error)
 	CreateThread(ctx context.Context, arg CreateThreadParams) error
 	CreateThreadPost(ctx context.Context, arg CreateThreadPostParams) error
 	GetMember(ctx context.Context, id int64) (GetMemberRow, error)

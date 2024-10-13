@@ -15,7 +15,7 @@ SELECT currval('thread_id_seq');
 SELECT currval('thread_id_post_seq');
 
 -- name: CreateOrReturnID :one
-SELECT createOrReturnID($1);
+SELECT id::bigint, is_admin::boolean FROM createOrReturnID($1);
 
 -- name: GetMemberId :one
 SELECT id FROM member WHERE email = $1;

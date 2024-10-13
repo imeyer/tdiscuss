@@ -41,8 +41,9 @@ type ExtendedQuerier interface {
 }
 
 type User struct {
-	ID    int64
-	Email string
+	ID      int64
+	Email   string
+	IsAdmin bool
 }
 
 type QueriesWrapper struct {
@@ -396,7 +397,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user", user.Email), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
+		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user", user.Email), slog.Int64("user_id", user.ID))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
@@ -1024,16 +1025,17 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 
 		ctx := context.WithValue(r.Context(), "email", email)
 
-		id, err := s.queries.CreateOrReturnID(ctx, email)
+		user, err := s.queries.CreateOrReturnID(ctx, email)
 		if err != nil {
 			s.logger.ErrorContext(ctx, err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
 
-		ctx = context.WithValue(ctx, "user_id", id)
+		ctx = context.WithValue(ctx, "user_id", user.ID)
+		ctx = context.WithValue(ctx, "is_admin", user.IsAdmin)
 
-		s.logger.DebugContext(ctx, "UserMiddleware", slog.String("email", email), slog.Int64("user_id", id))
+		s.logger.DebugContext(ctx, "UserMiddleware", slog.String("email", email), slog.Int64("user_id", user.ID), slog.Bool("is_admin", user.IsAdmin))
 
 		r = r.WithContext(ctx)
 
@@ -1049,13 +1051,19 @@ func GetUser(r *http.Request) (User, error) {
 	if uid, ok := ctx.Value("user_id").(int64); ok {
 		u.ID = uid
 	} else {
-		return User{}, errors.New("user ID not found in context or invalid type")
+		return User{}, errors.New("user_id not found in context or invalid type")
 	}
 
 	if email, ok := ctx.Value("email").(string); ok {
 		u.Email = email
 	} else {
-		return User{}, errors.New("user email not found in context or invalid type")
+		return User{}, errors.New("email not found in context or invalid type")
+	}
+
+	if isAdmin, ok := ctx.Value("is_admin").(bool); ok {
+		u.IsAdmin = isAdmin
+	} else {
+		return User{}, errors.New("is_admin not found in context or invalid type")
 	}
 
 	return u, nil
