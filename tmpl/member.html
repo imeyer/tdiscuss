@@ -20,20 +20,33 @@
         </td>
         <td class="info-column">
             <div class="content-container">
-                <div class="content-row">
-                    {{ if ne .Member.Location.String "" }}
-                    Location: {{ .Member.Location.String }}<br />
-                    {{ end }}
-                    {{ if ne .Member.Pronouns.String "" }}
-                    Pronouns: {{ .Member.Pronouns.String }}<br />
-                    {{ end }}
-                    {{ if ne .Member.PreferredName.String "" }}
-                    Preferred Name: {{ .Member.PreferredName.String }}<br />
-                    {{ end }}
-                    {{ if ne .Member.Bio.String "" }}
-                    Bio: {{ .Member.Bio.String }}<br />
-                    {{ end }}
-                    Joined on {{ .Member.DateJoined.Time | formatTimestamp }}<br />
+                {{ if ne .Member.Location.String "" }}
+                <div class="profile-field">
+                    <div class="profile-field-label">Location</div>
+                    <div class="profile-field-value">{{ .Member.Location.String }}</div>
+                </div>
+                {{ end }}
+                {{ if ne .Member.Pronouns.String "" }}
+                <div class="profile-field">
+                    <div class="profile-field-label">Pronouns</div>
+                    <div class="profile-field-value">{{ .Member.Pronouns.String }}</div>
+                </div>
+                {{ end }}
+                {{ if ne .Member.PreferredName.String "" }}
+                <div class="profile-field">
+                    <div class="profile-field-label">Preferred Name</div>
+                    <div class="profile-field-value">{{ .Member.PreferredName.String }}</div>
+                </div>
+                {{ end }}
+                {{ if ne .Member.Bio.String "" }}
+                <div class="profile-field">
+                    <div class="profile-field-label">Bio</div>
+                    <div class="profile-field-value">{{ .Member.Bio.String }}</div>
+                </div>
+                {{ end }}
+                <div class="profile-field">
+                    <div class="profile-field-label">Joined on</div>
+                    <div class="profile-field-value">{{ .Member.DateJoined.Time | formatTimestamp }}</div>
                 </div>
                 {{ if .Threads }}
                 <div class="thread-content-row">
