@@ -1,11 +1,8 @@
 {{ template "header" . }}
 
+{{ template "menu" . }}
+
 {{ if .Member }}
-{{ if eq .CurrentUserEmail .Member.Email }}
-<h2>
-    <a href="/member/edit">Edit Profile</a>
-</h2>
-{{ end }}
 
 <table class="profile-table">
     <tr>
