@@ -806,14 +806,14 @@ func TestListMember(t *testing.T) {
 			url:    "/member/1",
 			mid:    "1",
 			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+				mq.GetMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
 					return GetMemberRow{
 						Email:    "test@example.com",
 						Location: pgtype.Text{String: "Test Location", Valid: true},
 						ID:       id,
 					}, nil
 				}
-				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
+				mq.ListMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
 					return []ListMemberThreadsRow{
 						{
 							ThreadID:       1,
@@ -855,7 +855,7 @@ func TestListMember(t *testing.T) {
 			url:    "/member/1",
 			mid:    "1",
 			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+				mq.GetMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
 					return GetMemberRow{}, errors.New("database error")
 				}
 			},
@@ -868,14 +868,14 @@ func TestListMember(t *testing.T) {
 			url:    "/member/1",
 			mid:    "1",
 			setupMocks: func(mq *MockQueries) {
-				mq.getMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
+				mq.GetMemberFunc = func(ctx context.Context, id int64) (GetMemberRow, error) {
 					return GetMemberRow{
 						Email:    "test@example.com",
 						Location: pgtype.Text{String: "Test Location", Valid: true},
 						ID:       id,
 					}, nil
 				}
-				mq.listMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
+				mq.ListMemberThreadsFunc = func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
 					return nil, errors.New("database error")
 				}
 			},
@@ -887,8 +887,8 @@ func TestListMember(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset mock queries for each test
-			mockQueries.getMemberFunc = nil
-			mockQueries.listMemberThreadsFunc = nil
+			mockQueries.GetMemberFunc = nil
+			mockQueries.ListMemberThreadsFunc = nil
 			mockQueries.CreateOrReturnIDFunc = nil
 
 			// Setup mocks
@@ -1264,19 +1264,21 @@ func (m *MockTx) Rollback(ctx context.Context) error {
 }
 
 type MockQueries struct {
-	inTransaction            bool
-	getMemberFunc            func(ctx context.Context, id int64) (GetMemberRow, error)
-	listMemberThreadsFunc    func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
-	CreateOrReturnIDFunc     func(ctx context.Context, email string) (CreateOrReturnIDRow, error)
-	ListThreadPostsFunc      func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
-	GetThreadSequenceIdFunc  func(ctx context.Context) (int64, error)
-	CreateThreadFunc         func(ctx context.Context, arg CreateThreadParams) error
-	UpdateThreadFunc         func(ctx context.Context, arg UpdateThreadParams) error
-	UpdateThreadPostFunc     func(ctx context.Context, arg UpdateThreadPostParams) error
-	GetThreadSubjectByIdFunc func(ctx context.Context, id int64) (string, error)
-	// arg contains the parameters required to fetch the thread for editing.
-	GetThreadForEditFunc     func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
-	GetThreadPostForEditFunc func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
+	inTransaction             bool
+	CreateOrReturnIDFunc      func(ctx context.Context, email string) (CreateOrReturnIDRow, error)
+	CreateThreadFunc          func(ctx context.Context, arg CreateThreadParams) error
+	GetBoardDataFunc          func(ctx context.Context) (GetBoardDataRow, error)
+	GetMemberFunc             func(ctx context.Context, id int64) (GetMemberRow, error)
+	GetThreadForEditFunc      func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
+	GetThreadPostForEditFunc  func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
+	GetThreadSequenceIdFunc   func(ctx context.Context) (int64, error)
+	GetThreadSubjectByIdFunc  func(ctx context.Context, id int64) (string, error)
+	ListMemberThreadsFunc     func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
+	ListThreadPostsFunc       func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
+	UpdateBoardEditWindowFunc func(ctx context.Context, arg pgtype.Int4) error
+	UpdateBoardTitleFunc      func(ctx context.Context, arg string) error
+	UpdateThreadFunc          func(ctx context.Context, arg UpdateThreadParams) error
+	UpdateThreadPostFunc      func(ctx context.Context, arg UpdateThreadPostParams) error
 }
 
 func (m *MockQueries) CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error) {
@@ -1300,9 +1302,24 @@ func (m *MockQueries) CreateThreadPost(ctx context.Context, arg CreateThreadPost
 	return nil
 }
 
+func (m *MockQueries) GetBoardData(ctx context.Context) (GetBoardDataRow, error) {
+	if m.GetBoardDataFunc != nil {
+		return m.GetBoardDataFunc(ctx)
+	}
+
+	// Mock implementation
+	// Default to 900 second edit window
+	return GetBoardDataRow{
+		EditWindow: pgtype.Int4{Int32: 900, Valid: true},
+		Title:      "Mock Board Title",
+		ID:         1,
+	}, nil
+
+}
+
 func (m *MockQueries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {
-	if m.getMemberFunc != nil {
-		return m.getMemberFunc(ctx, id)
+	if m.GetMemberFunc != nil {
+		return m.GetMemberFunc(ctx, id)
 	}
 
 	// Mock implementation
@@ -1367,8 +1384,8 @@ func (m *MockQueries) GetThreadPostForEdit(ctx context.Context, arg GetThreadPos
 }
 
 func (m *MockQueries) ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error) {
-	if m.listMemberThreadsFunc != nil {
-		return m.listMemberThreadsFunc(ctx, memberID)
+	if m.ListMemberThreadsFunc != nil {
+		return m.ListMemberThreadsFunc(ctx, memberID)
 	}
 
 	// Mock implementation
@@ -1407,6 +1424,24 @@ func (m *MockQueries) ListThreads(ctx context.Context, arg ListThreadsParams) ([
 			Locked:         pgtype.Bool{Bool: false, Valid: true},
 		},
 	}, nil
+}
+
+func (m *MockQueries) UpdateBoardEditWindow(ctx context.Context, arg pgtype.Int4) error {
+	if m.UpdateBoardEditWindowFunc != nil {
+		return m.UpdateBoardEditWindowFunc(ctx, arg)
+	}
+
+	// Mock implementation
+	return nil
+}
+
+func (m *MockQueries) UpdateBoardTitle(ctx context.Context, arg string) error {
+	if m.UpdateBoardTitleFunc != nil {
+		return m.UpdateBoardTitleFunc(ctx, arg)
+	}
+
+	// Mock implementation
+	return nil
 }
 
 func (m *MockQueries) UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error {

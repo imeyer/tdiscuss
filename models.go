@@ -9,9 +9,14 @@ import (
 )
 
 type BoardDatum struct {
-	ID    int32
-	Name  string
-	Value string
+	ID               int32
+	Title            string
+	AllowEditing     pgtype.Bool
+	AllowDeleting    pgtype.Bool
+	EditWindow       pgtype.Int4
+	TotalMembers     pgtype.Int4
+	TotalThreads     pgtype.Int4
+	TotalThreadPosts pgtype.Int4
 }
 
 type Member struct {

@@ -61,6 +61,40 @@ func (q *Queries) CreateThreadPost(ctx context.Context, arg CreateThreadPostPara
 	return err
 }
 
+const getBoardData = `-- name: GetBoardData :one
+SELECT
+  id,
+  title,
+  total_members,
+  total_threads,
+  total_thread_posts,
+  edit_window
+FROM board_data
+`
+
+type GetBoardDataRow struct {
+	ID               int32
+	Title            string
+	TotalMembers     pgtype.Int4
+	TotalThreads     pgtype.Int4
+	TotalThreadPosts pgtype.Int4
+	EditWindow       pgtype.Int4
+}
+
+func (q *Queries) GetBoardData(ctx context.Context) (GetBoardDataRow, error) {
+	row := q.db.QueryRow(ctx, getBoardData)
+	var i GetBoardDataRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.TotalMembers,
+		&i.TotalThreads,
+		&i.TotalThreadPosts,
+		&i.EditWindow,
+	)
+	return i, err
+}
+
 const getMember = `-- name: GetMember :one
 SELECT
   m.email,
@@ -480,6 +514,26 @@ func (q *Queries) ListThreads(ctx context.Context, arg ListThreadsParams) ([]Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateBoardEditWindow = `-- name: UpdateBoardEditWindow :exec
+UPDATE board_data
+SET edit_window=$1
+`
+
+func (q *Queries) UpdateBoardEditWindow(ctx context.Context, editWindow pgtype.Int4) error {
+	_, err := q.db.Exec(ctx, updateBoardEditWindow, editWindow)
+	return err
+}
+
+const updateBoardTitle = `-- name: UpdateBoardTitle :exec
+UPDATE board_data
+SET title=$1
+`
+
+func (q *Queries) UpdateBoardTitle(ctx context.Context, title string) error {
+	_, err := q.db.Exec(ctx, updateBoardTitle, title)
+	return err
 }
 
 const updateMemberProfileByID = `-- name: UpdateMemberProfileByID :exec

@@ -162,6 +162,7 @@ func setupMux(dsvc *DiscussService) http.Handler {
 
 	tailnetMux := http.NewServeMux()
 
+	tailnetMux.HandleFunc("POST /admin", CSRFMiddleware(dsvc.Admin))
 	tailnetMux.HandleFunc("POST /member/edit", CSRFMiddleware(dsvc.EditMemberProfile))
 	tailnetMux.HandleFunc("POST /thread/new", CSRFMiddleware(dsvc.CreateThread))
 	tailnetMux.HandleFunc("POST /thread/{tid}/edit", CSRFMiddleware(dsvc.EditThread))
@@ -169,6 +170,7 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	tailnetMux.HandleFunc("POST /thread/{tid}", CSRFMiddleware(dsvc.CreateThreadPost))
 
 	tailnetMux.HandleFunc("GET /{$}", CSRFMiddleware(dsvc.ListThreads))
+	tailnetMux.HandleFunc("GET /admin", CSRFMiddleware(dsvc.Admin))
 	tailnetMux.HandleFunc("GET /member/{mid}", CSRFMiddleware(dsvc.ListMember))
 	tailnetMux.HandleFunc("GET /member/edit", CSRFMiddleware(dsvc.EditMemberProfile))
 	tailnetMux.HandleFunc("GET /thread/new", CSRFMiddleware(dsvc.NewThread))
@@ -304,6 +306,134 @@ type ThreadTemplateData struct {
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
 	CanEdit        pgtype.Bool
+}
+
+func (s *DiscussService) Admin(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering Admin()")
+	defer s.logger.DebugContext(r.Context(), "exiting Admin()")
+
+	switch r.Method {
+	case http.MethodGet:
+		s.AdminGET(w, r)
+	case http.MethodPost:
+		s.AdminPOST(w, r)
+	default:
+		s.renderError(w, http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering AdminGET()")
+	defer s.logger.DebugContext(r.Context(), "exiting AdminGET()")
+
+	csrfToken := GetCSRFToken(r)
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	if !user.IsAdmin {
+		s.logger.ErrorContext(
+			r.Context(),
+			"user is not admin",
+			slog.String("email", user.Email),
+			slog.Int64("user_id", user.ID),
+			slog.Bool("is_admin", user.IsAdmin),
+		)
+		s.renderError(w, http.StatusForbidden)
+		return
+	}
+
+	boardData, err := s.queries.GetBoardData(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	s.renderTemplate(w, r, "admin.html", map[string]interface{}{
+		"Title":     GetBoardTitle(r),
+		"BoardData": boardData,
+		"Version":   s.version,
+		"GitSha":    s.gitSha,
+		"CSRFToken": csrfToken,
+		"User":      user,
+	})
+}
+
+func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering AdminPOST()")
+	defer s.logger.DebugContext(r.Context(), "exiting AdminPOST()")
+
+	if err := validateCSRFToken(r); err != nil {
+		s.logger.ErrorContext(r.Context(), "CSRF validation failed", slog.String("error", err.Error()))
+		http.Error(w, "CSRF validation failed", http.StatusForbidden)
+		return
+	}
+
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	if !user.IsAdmin {
+		s.logger.ErrorContext(
+			r.Context(),
+			"user is not admin",
+			slog.String("email", user.Email),
+			slog.Int64("user_id", user.ID),
+			slog.Bool("is_admin", user.IsAdmin),
+		)
+		s.renderError(w, http.StatusForbidden)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	if !r.Form.Has("board_title") {
+		s.logger.ErrorContext(r.Context(), "missing board_title")
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	boardTitle := r.Form.Get("board_title")
+
+	if err := s.queries.UpdateBoardTitle(r.Context(), boardTitle); err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	if !r.Form.Has("edit_window") {
+		s.logger.ErrorContext(r.Context(), "missing edit_window")
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	editWindow, err := strconv.ParseInt(r.Form.Get("edit_window"), 10, 32)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
+
+	if err := s.queries.UpdateBoardEditWindow(r.Context(), pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+
 }
 
 // CreateThread handles the creation of a new thread.
@@ -482,6 +612,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 			"Version":          s.version,
 			"GitSha":           s.gitSha,
 			"CSRFToken":        csrfToken,
+			"User":             user,
 		})
 		return
 	}
@@ -643,11 +774,12 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "edit-thread.html", map[string]interface{}{
-		"Title":     BOARD_TITLE,
+		"Title":     GetBoardTitle(r),
 		"Thread":    thread,
 		"Version":   s.version,
 		"CSRFToken": csrfToken,
 		"GitSha":    s.gitSha,
+		"User":      user,
 	})
 	return
 }
@@ -772,6 +904,7 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		"Post":      post,
 		"ThreadID":  threadID,
 		"GitSha":    s.gitSha,
+		"User":      user,
 	})
 }
 
@@ -842,10 +975,11 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "index.html", map[string]interface{}{
-		"Title":   BOARD_TITLE,
+		"Title":   GetBoardTitle(r),
 		"Threads": threadsParsed,
 		"Version": s.version,
 		"GitSha":  s.gitSha,
+		"User":    user,
 	})
 }
 
@@ -917,7 +1051,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	csrfToken := GetCSRFToken(r)
 
 	s.renderTemplate(w, r, "thread.html", map[string]interface{}{
-		"Title":       BOARD_TITLE,
+		"Title":       GetBoardTitle(r),
 		"ThreadPosts": threadPosts,
 		// nosemgrep
 		"Subject":   template.HTML(subject),
@@ -925,6 +1059,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"GitSha":    s.gitSha,
 		"Version":   s.version,
 		"CSRFToken": template.HTML(csrfToken),
+		"User":      user,
 	})
 }
 
@@ -987,7 +1122,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
-		"Title":            BOARD_TITLE,
+		"Title":            GetBoardTitle(r),
 		"Member":           member,
 		"CurrentUserEmail": user.Email,
 		"Threads":          memberThreadsParsed,
@@ -1025,7 +1160,7 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
 		"User":      user,
-		"Title":     BOARD_TITLE,
+		"Title":     GetBoardTitle(r),
 		"CSRFToken": csrfToken,
 		"Version":   s.version,
 		"GitSha":    s.gitSha,
@@ -1043,6 +1178,16 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 		}
 
 		ctx := context.WithValue(r.Context(), "email", email)
+
+		boardData, err := s.queries.GetBoardData(r.Context())
+		if err != nil {
+			s.logger.ErrorContext(r.Context(), err.Error())
+			s.renderError(w, http.StatusInternalServerError)
+			return
+		}
+
+		// Set the board title in the context
+		ctx = context.WithValue(ctx, "board_title", boardData.Title)
 
 		user, err := s.queries.CreateOrReturnID(ctx, email)
 		if err != nil {
@@ -1086,4 +1231,13 @@ func GetUser(r *http.Request) (User, error) {
 	}
 
 	return u, nil
+}
+
+func GetBoardTitle(r *http.Request) string {
+	ctx := r.Context()
+	if title, ok := ctx.Value("board_title").(string); ok {
+		return title
+	}
+
+	return BOARD_TITLE
 }
