@@ -15,6 +15,14 @@ jobs:
     steps:
       - name: Check out tdiscuss
         uses: actions/checkout@v4
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
       - name: Go version check
         run: make check-go-versions
       - name: Test //...
@@ -30,6 +38,14 @@ jobs:
     steps:
       - name: Check out tdiscuss
         uses: actions/checkout@v4
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-
       - name: Build //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
         run: |
           bazelisk build --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
