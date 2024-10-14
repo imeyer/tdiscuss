@@ -6,12 +6,15 @@ package main
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error)
 	CreateThread(ctx context.Context, arg CreateThreadParams) error
 	CreateThreadPost(ctx context.Context, arg CreateThreadPostParams) error
+	GetBoardData(ctx context.Context) (GetBoardDataRow, error)
 	GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 	GetMemberId(ctx context.Context, email string) (int64, error)
 	GetThreadForEdit(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
@@ -22,6 +25,8 @@ type Querier interface {
 	ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
 	ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
 	ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
+	UpdateBoardEditWindow(ctx context.Context, editWindow pgtype.Int4) error
+	UpdateBoardTitle(ctx context.Context, title string) error
 	UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error
 	UpdateThread(ctx context.Context, arg UpdateThreadParams) error
 	UpdateThreadPost(ctx context.Context, arg UpdateThreadPostParams) error

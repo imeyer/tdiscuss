@@ -24,6 +24,7 @@ go_library(
         "server.go",
     ],
     embedsrcs = [
+        "tmpl/admin.html",
         "tmpl/edit-profile.html",
         "tmpl/edit-thread.html",
         "tmpl/edit-thread-post.html",

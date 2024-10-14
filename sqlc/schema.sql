@@ -1,10 +1,16 @@
 CREATE TABLE board_data
 (
-  id      serial PRIMARY KEY,               -- id
-  name    text NOT NULL CHECK(name <> ''),  -- name of variable
-  value   text NOT NULL CHECK(value <> ''), -- preference value
-  UNIQUE(name)
+  id      serial PRIMARY KEY,                 -- id
+  title  varchar NOT NULL CHECK(title <> ''), -- title of board
+  allow_editing boolean DEFAULT false,        -- allow editing of posts
+  allow_deleting boolean DEFAULT false,       -- allow deleting of posts
+  edit_window int DEFAULT 0,                  -- time in seconds to allow editing of posts
+  total_members int DEFAULT 0,                -- total members
+  total_threads int DEFAULT 0,                -- total threads
+  total_thread_posts int DEFAULT 0            -- total posts in threads
 );
+
+INSERT INTO board_data (title, edit_window) VALUES ('My Board', 900);
 
 CREATE TABLE member
 (
@@ -76,10 +82,10 @@ CREATE TABLE thread_member
 CREATE OR REPLACE FUNCTION member_sync() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
-    UPDATE board_data SET value=(value::integer)-1 WHERE name='total_members';
+    UPDATE board_data SET total_members=(total_members::integer)-1;
     RETURN OLD;
   ELSEIF TG_OP = 'INSERT' THEN
-    UPDATE board_data SET value=(value::integer)+1 WHERE name='total_members';
+    UPDATE board_data SET total_members=(total_members::integer)+1;
     RETURN NEW;
   END IF;
   RETURN NULL;
@@ -90,11 +96,11 @@ CREATE OR REPLACE FUNCTION thread_sync() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     UPDATE member SET total_threads=total_threads-1 WHERE id=OLD.member_id;
-    UPDATE board_data SET value=(value::integer)-1 WHERE name='total_threads';
+    UPDATE board_data SET total_threads=(total_threads::integer)-1;
     RETURN OLD;
   ELSEIF TG_OP = 'INSERT' THEN
     UPDATE member SET total_threads=total_threads+1 WHERE id=NEW.member_id;
-    UPDATE board_data SET value=(value::integer)+1 WHERE name='total_threads';
+    UPDATE board_data SET total_threads=(total_threads::integer)+1;
     RETURN NEW;
   END IF;
   RETURN NULL;
@@ -105,7 +111,7 @@ CREATE OR REPLACE FUNCTION thread_post_sync() RETURNS trigger AS $$
 BEGIN
   IF TG_OP = 'DELETE' THEN
     UPDATE member SET total_thread_posts=total_thread_posts-1, last_post=now() WHERE id=OLD.member_id;
-    UPDATE board_data SET value=(value::integer)-1 WHERE name='total_thread_posts';
+    UPDATE board_data SET total_thread_posts=(total_thread_posts::integer)-1;
     IF (SELECT count(*) FROM thread_post WHERE thread_id=OLD.thread_id) > 1 THEN
       UPDATE
         thread
@@ -128,7 +134,7 @@ BEGIN
   ELSEIF TG_OP = 'INSERT' THEN
     UPDATE member SET last_post=now() WHERE id=NEW.member_id;
     UPDATE member SET total_thread_posts=total_thread_posts+1 WHERE id=NEW.member_id;
-    UPDATE board_data SET value=(value::integer)+1 WHERE name='total_thread_posts';
+    UPDATE board_data SET total_thread_posts=(total_thread_posts::integer)+1;
     UPDATE
       thread
     SET

@@ -142,6 +142,16 @@ ON
 WHERE tp.thread_id=$1
 ORDER BY tp.date_posted ASC;
 
+-- name: GetBoardData :one
+SELECT
+  id,
+  title,
+  total_members,
+  total_threads,
+  total_thread_posts,
+  edit_window
+FROM board_data;
+
 -- name: GetThreadSubjectById :one
 SELECT subject FROM thread WHERE id=$1;
 
@@ -163,6 +173,14 @@ SELECT tp.id, tp.body
 FROM thread_post tp LEFT JOIN member m
   ON tp.member_id=m.id
 WHERE tp.id=$1 AND m.id=$2;
+
+-- name: UpdateBoardTitle :exec
+UPDATE board_data
+SET title=$1;
+
+-- name: UpdateBoardEditWindow :exec
+UPDATE board_data
+SET edit_window=$1;
 
 -- name: UpdateMemberProfileByID :exec
 UPDATE member_profile SET
