@@ -34,6 +34,7 @@ go_library(
         "tmpl/index-thread-partial.html",
         "tmpl/index.html",
         "tmpl/member.html",
+        "tmpl/menu.html",
         "tmpl/newthread.html",
         "tmpl/thread.html",
         "static/style.css",

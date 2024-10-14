@@ -1,7 +1,9 @@
 {{ template "header" . }}
 
+{{ template "menu" . }}
+
 {{ if .Member }}
-<h2>Editing profile for {{ .CurrentUserEmail }}</h2>
+<h3>Editing profile for {{ .User.Email }}</h3>
 
 <div class="form-container">
     <form action="/member/edit" method="POST">

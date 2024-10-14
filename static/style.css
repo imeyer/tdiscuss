@@ -2,18 +2,22 @@
 :root {
     /* Common variables */
     --border: 1px solid #454545;
+    --menu-border: 0.5px solid #454545;
 
     /* Light mode variables */
     --background-color-light: #f0f4f8;
     --content-bg-light: #f9f9f9;
-    --even-row-color-light: #CCC;
-    --odd-row-color-light: #DDD;
+    --even-row-color-light: #8C867D;
+    --odd-row-color-light: #CCB287;
     --form-bg-light: #ddd;
     --header-color-light: #efefef;
     --primary-color-light: #1e6091;
     --text-color-light: #333;
     --text-color-secondary-light: #555;
     --threadpost-bg-light: #fff;
+    --menu-item-bg-light: #C7CACD;
+    --button-text-color-light: #fff;
+
 
     /* Dark mode variables */
     --background-color-dark: #1a2634;
@@ -22,10 +26,12 @@
     --odd-row-color-dark: #333;
     --form-bg-dark: #333;
     --header-color-dark: #2c2c2c;
-    --primary-color-dark: #64b5f6;
+    --primary-color-dark: #b5deff;
     --text-color-dark: #e0e0e0;
     --text-color-secondary-dark: #b0b0b0;
     --threadpost-bg-dark: #333;
+    --menu-item-bg-dark: #6B84A2;
+    --button-text-color-dark: #222;
 
     /* Default to light mode */
     --background-color: var(--background-color-light);
@@ -38,6 +44,8 @@
     --text-color: var(--text-color-light);
     --text-color-secondary: var(--text-color-secondary-light);
     --threadpost-bg: var(--threadpost-bg-light);
+    --menu-item-bg: var(--menu-item-bg-light);
+    --button-text-color: var(--button-text-color-light);
 }
 
 /* Base styles */
@@ -61,17 +69,6 @@ a:hover {
 
 /* Table styles */
 table {
-    border: var(--border);
-    border-collapse: separate;
-    border-radius: 0 0.625rem 0.625rem 0.625rem;
-    border-spacing: 0;
-    margin: 0 auto;
-    overflow: hidden;
-    table-layout: fixed;
-    width: 100%;
-}
-
-.content-container table {
     border: var(--border);
     border-collapse: separate;
     border-radius: 0.625rem;
@@ -159,7 +156,7 @@ tbody>tr:nth-child(odd) {
     background-color: var(--primary-color);
     border: none;
     border-radius: 0.625rem;
-    color: white;
+    color: var(--button-text-color);
     cursor: pointer;
     font-size: 1em;
     padding: 0.625rem;
@@ -168,7 +165,7 @@ tbody>tr:nth-child(odd) {
 
 .edit-profile button:hover,
 .form-group button:hover {
-    background-color: (var(--primary-color) + 20%);
+    background-color: var(--primary-color);
 }
 
 .edit-profile input,
@@ -198,6 +195,11 @@ tbody>tr:nth-child(odd) {
     color: var(--text-color-secondary);
     display: block;
     margin-bottom: 0.3125rem;
+}
+
+.menu {
+    display: flex;
+    flex-direction: row;
 }
 
 .profile-column {
@@ -296,13 +298,12 @@ tbody>tr:nth-child(odd) {
 
 .subject {
     display: inline-block;
-
 }
 
 .subject p {
-    font-size: 1.25rem;
+    font-size: 1.20rem;
     font-weight: 600;
-    margin-top: 0.4rem;
+    margin-top: 0rem;
     margin-bottom: 0.4rem;
     margin-left: 0rem;
     margin-right: 0rem;
@@ -315,17 +316,26 @@ tbody>tr:nth-child(odd) {
     padding-bottom: 10px;
 }
 
+hr {
+    border: var(--menu-border);
+    margin-top: 0;
+    margin-bottom: 1.2rem;
+}
+
 .sub-header {
     display: block;
     width: fit-content;
-    border-top-right-radius: 0.625rem;
-    border-top-left-radius: 0.625rem;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
+    border-radius: 0.625rem 0.625rem 0 0;
     border: var(--border);
     border-bottom: 0px;
-    margin-bottom: -1px;
+    margin-right: 0.625rem;
     padding: 5px 10px 10px 10px;
+    background-color: var(--menu-item-bg)
+}
+
+.sub-header.admin {
+    margin-left: 1.5rem;
+    border-radius: 0.625rem 0.625rem 0 0;
 }
 
 .board-title {
@@ -412,10 +422,8 @@ svg a:active {
         --text-color: var(--text-color-dark);
         --text-color-secondary: var(--text-color-secondary-dark);
         --threadpost-bg: var(--threadpost-bg-dark);
-    }
-
-    .form-group button:hover {
-        background-color: #ffb8d9;
+        --menu-item-bg: var(--menu-item-bg-dark);
+        --button-text-color: var(--button-text-color-dark);
     }
 }
 
