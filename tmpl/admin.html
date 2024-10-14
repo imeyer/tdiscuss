@@ -1,6 +1,8 @@
 {{ template "header" . }}
 
-<h2>Board statistics</h2>
+{{ template "menu" . }}
+
+<h3>Board statistics</h3>
 
 <div class="board-stats">
     <div class="board-stats-item">
@@ -17,7 +19,7 @@
     </div>
 </div>
 
-<h2>Edit board configuration</h2>
+<h3>Board configuration</h3>
 
 <div class="form-container">
     <form action="/admin" method="POST">
