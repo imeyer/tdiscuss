@@ -29,15 +29,19 @@ func createConfigDir(dir string) error {
 	return nil
 }
 
-func dataLocation() string {
+func dataLocationWithDeps(userConfigDir func() (string, error)) string {
 	if dir, ok := os.LookupEnv("DATA_DIR"); ok {
 		return dir
 	}
-	dir, err := os.UserConfigDir()
+	dir, err := userConfigDir()
 	if err != nil {
 		return os.Getenv("DATA_DIR")
 	}
 	return filepath.Join(dir, "tailscale", "discuss")
+}
+
+func dataLocation() string {
+	return dataLocationWithDeps(os.UserConfigDir)
 }
 
 func envOr(key, defaultVal string) string {

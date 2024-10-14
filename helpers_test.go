@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -125,69 +126,6 @@ func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 
 	if attempts != 3 {
 		t.Fatalf("Expected 3 attempts, got %d", attempts)
-	}
-}
-
-func TestCreateConfigDirTwo(t *testing.T) {
-	tests := []struct {
-		name    string
-		dir     string
-		setup   func()
-		wantErr bool
-	}{
-		{
-			name: "Create new directory",
-			dir:  "testdata/config",
-			setup: func() {
-				// No setup needed for this test case
-			},
-			wantErr: false,
-		},
-		{
-			name: "Create existing directory",
-			dir:  "testdata/existing",
-			setup: func() {
-				os.MkdirAll("testdata/existing", 0o700) // Create the directory beforehand
-			},
-			wantErr: false,
-		},
-		{
-			name: "Error creating main directory",
-			dir:  "testdata/error-main",
-			setup: func() {
-				// Simulate an error by creating a file with the same name
-				os.WriteFile("testdata/error-main", []byte{}, 0o600)
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup the test case
-			tt.setup()
-
-			defer os.RemoveAll(tt.dir)
-
-			// Attempt to create the directory
-			err := createConfigDir(tt.dir)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("os.MkdirAll() error = %v, wantErr %v", err, tt.wantErr)
-			}
-
-			// Check permissions if no error is expected
-			if !tt.wantErr {
-				info, err := os.Stat(tt.dir)
-				if err != nil {
-					t.Errorf("Failed to get directory info: %v", err)
-				} else if info.Mode().Perm() != 0o700 {
-					t.Errorf("Incorrect permissions: got %v, want %v", info.Mode().Perm(), 0o700)
-				}
-			}
-
-			// Clean up
-			os.RemoveAll(tt.dir)
-		})
 	}
 }
 
@@ -437,6 +375,162 @@ func TestSetupLogger(t *testing.T) {
 				t.Errorf("Expected log output to contain '%s', got %v", tt.expectMsg, buf.String())
 			} else if tt.expectMsg == "" && buf.Len() != 0 {
 				t.Errorf("Expected no log output, got %v", buf.String())
+			}
+		})
+	}
+}
+
+func TestCreateConfigDir(t *testing.T) {
+	tests := []struct {
+		name    string
+		dir     string
+		setup   func()
+		wantErr bool
+	}{
+		{
+			name: "Create new directory",
+			dir:  "testdata/config",
+			setup: func() {
+				// No setup needed for this test case
+			},
+			wantErr: false,
+		},
+		{
+			name: "Create existing directory",
+			dir:  "testdata/existing",
+			setup: func() {
+				os.MkdirAll("testdata/existing", 0o700) // Create the directory beforehand
+			},
+			wantErr: false,
+		},
+		{
+			name: "Error creating main directory",
+			dir:  "testdata/error-main",
+			setup: func() {
+				// Simulate an error by creating a file with the same name
+				os.WriteFile("testdata/error-main", []byte{}, 0o600)
+			},
+			wantErr: true,
+		},
+		{
+			name: "Create tsnet subdirectory",
+			dir:  "testdata/with-tsnet",
+			setup: func() {
+				// No setup needed
+			},
+			wantErr: false,
+		},
+		{
+			name: "Error creating tsnet subdirectory",
+			dir:  "testdata/error-tsnet",
+			setup: func() {
+				os.MkdirAll("testdata/error-tsnet", 0o700)
+				// Simulate an error by creating a file with the same name as the tsnet subdirectory
+				os.WriteFile("testdata/error-tsnet/tsnet", []byte{}, 0o600)
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup the test case
+			tt.setup()
+			defer os.RemoveAll(tt.dir)
+
+			// Attempt to create the directory
+			err := createConfigDir(tt.dir)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("createConfigDir() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			// Check permissions if no error is expected
+			if !tt.wantErr {
+				// Check main directory
+				info, err := os.Stat(tt.dir)
+				if err != nil {
+					t.Errorf("Failed to get directory info: %v", err)
+				} else if info.Mode().Perm() != 0o700 {
+					t.Errorf("Incorrect permissions for main directory: got %v, want %v", info.Mode().Perm(), 0o700)
+				}
+
+				// Check tsnet subdirectory
+				tsnetDir := filepath.Join(tt.dir, "tsnet")
+				info, err = os.Stat(tsnetDir)
+				if err != nil {
+					t.Errorf("Failed to get tsnet subdirectory info: %v", err)
+				} else if info.Mode().Perm() != 0o700 {
+					t.Errorf("Incorrect permissions for tsnet subdirectory: got %v, want %v", info.Mode().Perm(), 0o700)
+				}
+			}
+
+			// Clean up
+			os.RemoveAll(tt.dir)
+		})
+	}
+}
+
+func TestDataLocation(t *testing.T) {
+	// Save the original environment and defer its restoration
+	origEnv := os.Environ()
+	defer func() {
+		os.Clearenv()
+		for _, pair := range origEnv {
+			kv := strings.SplitN(pair, "=", 2)
+			os.Setenv(kv[0], kv[1])
+		}
+	}()
+
+	// Helper function to set up environment for each test
+	setupEnv := func(env map[string]string) {
+		os.Clearenv()
+		for k, v := range env {
+			os.Setenv(k, v)
+		}
+	}
+
+	tests := []struct {
+		name          string
+		env           map[string]string
+		userConfigDir func() (string, error)
+		want          string
+	}{
+		{
+			name: "DATA_DIR environment variable set",
+			env: map[string]string{
+				"DATA_DIR": "/custom/data/dir",
+			},
+			userConfigDir: func() (string, error) {
+				return "/user/config/dir", nil
+			},
+			want: "/custom/data/dir",
+		},
+		{
+			name: "DATA_DIR not set, UserConfigDir succeeds",
+			env:  map[string]string{},
+			userConfigDir: func() (string, error) {
+				return "/user/config/dir", nil
+			},
+			want: filepath.Join("/user/config/dir", "tailscale", "discuss"),
+		},
+		{
+			name: "DATA_DIR not set, UserConfigDir fails, fallback to empty DATA_DIR",
+			env:  map[string]string{},
+			userConfigDir: func() (string, error) {
+				return "", os.ErrNotExist
+			},
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupEnv(tt.env)
+
+			got := dataLocationWithDeps(tt.userConfigDir)
+			if got != tt.want {
+				t.Errorf("dataLocation() = %v, want %v", got, tt.want)
 			}
 		})
 	}
