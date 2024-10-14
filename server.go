@@ -606,7 +606,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 	if r.Method == http.MethodGet {
 		// Render the edit profile form
 		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
-			"Title":            BOARD_TITLE + " - Edit Profile",
+			"Title":            GetBoardTitle(r),
 			"Member":           member,
 			"CurrentUserEmail": user.Email,
 			"Version":          s.version,
