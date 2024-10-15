@@ -5,47 +5,78 @@
     --menu-border: 0.5px solid #454545;
 
     /* Light mode variables */
-    --background-color-light: #f0f4f8;
-    --content-bg-light: #f9f9f9;
-    --even-row-color-light: #8C867D;
-    --odd-row-color-light: #CCB287;
-    --form-bg-light: #ddd;
-    --header-color-light: #efefef;
-    --primary-color-light: #1e6091;
-    --text-color-light: #333;
-    --text-color-secondary-light: #555;
-    --threadpost-bg-light: #fff;
-    --menu-item-bg-light: #C7CACD;
-    --button-text-color-light: #fff;
+    --background-color-light: #e5e5e5;
+    --button-text-color-light: #000000;
+    --content-bg-light: #f8f8f8;
+    --even-row-color-light: #f1f1f1;
+    --form-bg-light: #f8f8f8;
+    --header-color-light: #e5e5e5;
+    --link-color-light: #303030;
+    --menu-admin-item-bg-light: #e38c8c;
+    --menu-admin-text-color-light: #e9e9e9;
+    --menu-item-bg-light: #ffffff;
+    --menu-text-color-light: #323232;
+    --odd-row-color-light: #f0f0f4;
+    --primary-color-light: #ececec;
+    --text-color-light: #212121;
+    --text-color-secondary-light: #383838;
+    --threadpost-bg-light: #f8f8f8;
 
 
     /* Dark mode variables */
     --background-color-dark: #1a2634;
+    --button-text-color-dark: #222;
     --content-bg-dark: #2c2c2c;
     --even-row-color-dark: #444;
-    --odd-row-color-dark: #333;
     --form-bg-dark: #333;
     --header-color-dark: #2c2c2c;
-    --primary-color-dark: #b5deff;
+    --menu-admin-item-bg-dark: #c23030;
+    --menu-admin-text-color-dark: #ffffff;
+    --menu-item-bg-dark: #24456c;
+    --menu-text-color-dark: #e3e3e3;
+    --odd-row-color-dark: #333;
+    --primary-color-dark: #314c63;
     --text-color-dark: #e0e0e0;
     --text-color-secondary-dark: #b0b0b0;
     --threadpost-bg-dark: #333;
-    --menu-item-bg-dark: #6B84A2;
-    --button-text-color-dark: #222;
 
     /* Default to light mode */
     --background-color: var(--background-color-light);
+    --button-text-color: var(--button-text-color-light);
     --content-bg: var(--content-bg-light);
     --even-row-color: var(--even-row-color-light);
-    --odd-row-color: var(--odd-row-color-light);
     --form-bg: var(--form-bg-light);
     --header-color: var(--header-color-light);
-    --primary-color: var(--primary-color-light);
-    --text-color: var(--text-color-light);
-    --text-color-secondary: var(--text-color-secondary-light);
-    --threadpost-bg: var(--threadpost-bg-light);
+    --link-color: var(--link-color-light);
+    --menu-admin-item-bg: var(--menu-admin-item-bg-light);
+    --menu-admin-text-color: var(--menu-admin-text-color-light);
     --menu-item-bg: var(--menu-item-bg-light);
-    --button-text-color: var(--button-text-color-light);
+    --menu-text-color: var(--menu-text-color-light);
+    --odd-row-color: var(--odd-row-color-light);
+    --primary-color: var(--primary-color-light);
+    --text-color-secondary: var(--text-color-secondary-light);
+    --text-color: var(--text-color-light);
+    --threadpost-bg: var(--threadpost-bg-light);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background-color: var(--background-color-dark);
+        --content-bg: var(--content-bg-dark);
+        --even-row-color: var(--even-row-color-dark);
+        --odd-row-color: var(--odd-row-color-dark);
+        --form-bg: var(--form-bg-dark);
+        --header-color: var(--header-color-dark);
+        --primary-color: var(--primary-color-dark);
+        --text-color: var(--text-color-dark);
+        --text-color-secondary: var(--text-color-secondary-dark);
+        --threadpost-bg: var(--threadpost-bg-dark);
+        --menu-admin-item-bg: var(--menu-admin-item-bg-dark);
+        --menu-item-bg: var(--menu-item-bg-dark);
+        --button-text-color: var(--button-text-color-dark);
+        --link-color: var(--link-color-dark);
+        --menu-text-color: var(--menu-text-color-dark);
+    }
 }
 
 /* Base styles */
@@ -59,7 +90,7 @@ body {
 }
 
 a {
-    color: var(--primary-color);
+    color: var(--link-color);
     text-decoration: none;
 }
 
@@ -153,7 +184,7 @@ tbody>tr:nth-child(odd) {
 
 .edit-profile button,
 .form-group button {
-    background-color: var(--primary-color);
+    background-color: var(--menu-item-bg);
     border: none;
     border-radius: 0.625rem;
     color: var(--button-text-color);
@@ -322,20 +353,39 @@ hr {
     margin-bottom: 1.2rem;
 }
 
-.sub-header {
+.menu-item {
     display: block;
     width: fit-content;
     border-radius: 0.625rem 0.625rem 0 0;
     border: var(--border);
     border-bottom: 0px;
     margin-right: 0.625rem;
-    padding: 5px 10px 10px 10px;
+    padding: 0.39rem;
+    color: var(--menu-text-color);
     background-color: var(--menu-item-bg)
 }
 
-.sub-header.admin {
+.menu-item.admin:hover {
+    color: var(--menu-admin-text-color);
+    background-color: var(--menu-admin-item-bg);
+}
+
+.menu-item.admin {
     margin-left: 1.5rem;
+    color: var(--menu-admin-text-color);
+    background-color: var(--menu-admin-item-bg);
     border-radius: 0.625rem 0.625rem 0 0;
+}
+
+.menu-item a {
+    color: var(--menu-text-color);
+    text-decoration: none;
+    font-weight: 400;
+}
+
+.menu-item.admin a {
+    color: var(--menu-link-color);
+    font-weight: 600;
 }
 
 .board-title {
@@ -353,8 +403,16 @@ hr {
 }
 
 .header,
-.sub-header {
+.menu-item {
     font-size: 1.1em;
+}
+
+.threadpost-body pre {
+    font-size: 0.9rem;
+    background-color: #222;
+    padding: 0.7rem;
+    border-radius: 0.625rem;
+    width: max-content;
 }
 
 /* SVG styles */
@@ -409,23 +467,7 @@ svg a:active {
 
 
 
-/* Media Queries */
-@media (prefers-color-scheme: dark) {
-    :root {
-        --background-color: var(--background-color-dark);
-        --content-bg: var(--content-bg-dark);
-        --even-row-color: var(--even-row-color-dark);
-        --odd-row-color: var(--odd-row-color-dark);
-        --form-bg: var(--form-bg-dark);
-        --header-color: var(--header-color-dark);
-        --primary-color: var(--primary-color-dark);
-        --text-color: var(--text-color-dark);
-        --text-color-secondary: var(--text-color-secondary-dark);
-        --threadpost-bg: var(--threadpost-bg-dark);
-        --menu-item-bg: var(--menu-item-bg-dark);
-        --button-text-color: var(--button-text-color-dark);
-    }
-}
+
 
 @media (max-width: 48rem) {
 

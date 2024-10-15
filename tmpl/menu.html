@@ -1,10 +1,10 @@
 {{ define "menu" }}
 <span class="menu">
-    <span class="sub-header"><a href="/">index</a></span>
-    <span class="sub-header"><a href="/thread/new">new thread</a></span>
-    <span class="sub-header"><a href="/member/edit">edit profile</a></span>
+    <span class="menu-item"><a href="/">index</a></span>
+    <span class="menu-item"><a href="/thread/new">new thread</a></span>
+    <span class="menu-item"><a href="/member/edit">edit profile</a></span>
     {{ if .User.IsAdmin }}
-    <span class="sub-header admin"><a href="/admin">admin</a></span>
+    <span class="menu-item admin"><a href="/admin">admin</a></span>
     {{ end }}
 </span>
 <hr />
