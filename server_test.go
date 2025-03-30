@@ -518,6 +518,7 @@ func TestEditThreadPostGET(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  nil,
 	}
 
 	tests := []struct {
@@ -1116,7 +1117,7 @@ func TestNewDiscussService(t *testing.T) {
 	version := "1.0"
 	gitSha := "abc123"
 
-	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha)
+	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha, nil)
 
 	assert.Equal(t, mockTailscaleClient, ds.tailClient, "expected tailClient to be %v, got %v", mockTailscaleClient, ds.tailClient)
 	assert.Equal(t, logger, ds.logger, "expected logger to be %v, got %v", logger, ds.logger)
@@ -1314,7 +1315,6 @@ func (m *MockQueries) GetBoardData(ctx context.Context) (GetBoardDataRow, error)
 		Title:      "Mock Board Title",
 		ID:         1,
 	}, nil
-
 }
 
 func (m *MockQueries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {

@@ -12,7 +12,7 @@
     </div>
     <div class="threadpost-body">
         {{ if .CanEdit.Bool }}
-        Hey mom! <a href="/thread/{{ .ThreadID.Int64 }}/{{ .ID }}/edit">Edit</a>
+        <a href="/thread/{{ .ThreadID.Int64 }}/{{ .ID }}/edit">Edit</a>
         {{ end }}
         {{ .Body }}
     </div>

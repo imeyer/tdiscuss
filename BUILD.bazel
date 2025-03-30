@@ -1,79 +1,10 @@
 load("@gazelle//:def.bzl", "gazelle")
-load("@rules_go//go:def.bzl", "go_library", "go_test")
-load("helper.bzl", "cross_compile_binary")
-load("platforms.def.bzl", "PLATFORMS")
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("crosscompile.bzl", "create_cross_platform_targets")
 
 gazelle(name = "gazelle")
 
-# Name of the binary
 NAME = "tdiscuss"
-
-go_library(
-    name = "{}_lib".format(NAME),
-    srcs = [
-        "config.go",
-        "csrf.go",
-        "db.go",
-        "helpers.go",
-        "main.go",
-        "metrics.go",
-        "models.go",
-        "parser.go",
-        "querier.go",
-        "queries.sql.go",
-        "server.go",
-    ],
-    embedsrcs = [
-        "tmpl/admin.html",
-        "tmpl/edit-profile.html",
-        "tmpl/edit-thread.html",
-        "tmpl/edit-thread-post.html",
-        "tmpl/error.html",
-        "tmpl/footer.html",
-        "tmpl/header.html",
-        "tmpl/index-thread-partial.html",
-        "tmpl/index.html",
-        "tmpl/member.html",
-        "tmpl/menu.html",
-        "tmpl/newthread.html",
-        "tmpl/thread.html",
-        "static/style.css",
-    ],
-    importpath = "github.com/imeyer/{}".format(NAME),
-    visibility = ["//visibility:private"],
-    x_defs = {
-        "version": "{STABLE_VERSION}",
-        "gitSha": "{STABLE_GIT_SHA}",
-    },
-    deps = [
-        "@com_github_google_uuid//:uuid",
-        "@com_github_jackc_pgx_v5//:pgx",
-        "@com_github_jackc_pgx_v5//pgconn",
-        "@com_github_jackc_pgx_v5//pgtype",
-        "@com_github_jackc_pgx_v5//pgxpool",
-        "@com_github_microcosm_cc_bluemonday//:bluemonday",
-        "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@com_github_prometheus_client_golang//prometheus/testutil",
-        "@com_github_yuin_goldmark//:goldmark",
-        "@com_github_yuin_goldmark//extension",
-        "@com_github_yuin_goldmark//renderer/html",
-        "@com_github_yuin_goldmark_emoji//:goldmark-emoji",
-        "@com_tailscale//client/tailscale",
-        "@com_tailscale//client/tailscale/apitype",
-        "@com_tailscale//hostinfo",
-        "@com_tailscale//ipn/ipnstate",
-        "@com_tailscale//tailcfg",
-        "@com_tailscale//tsnet",
-        "@com_tailscale//types/logger",
-    ],
-)
-
-[cross_compile_binary(
-    name = NAME,
-    goarch = goarch,
-    goos = goos,
-) for (goos, goarch) in PLATFORMS]
 
 go_test(
     name = "tdiscuss_test",
@@ -87,6 +18,11 @@ go_test(
         "server_test.go",
     ],
     embed = [":tdiscuss_lib"],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "@com_github_jackc_pgx_v5//:pgx",
         "@com_github_jackc_pgx_v5//pgtype",
@@ -96,5 +32,106 @@ go_test(
         "@com_tailscale//client/tailscale/apitype",
         "@com_tailscale//ipn/ipnstate",
         "@com_tailscale//tailcfg",
+    ],
+)
+
+# To allow running all tests without external deps
+test_suite(
+    name = "all_tests",
+    tests = [":tdiscuss_test"],
+)
+
+# Default binary for the current platform
+go_binary(
+    name = "tdiscuss",
+    embed = [":tdiscuss_lib"],
+    visibility = ["//visibility:public"],
+)
+
+create_cross_platform_targets(
+    name = "tdiscuss",
+    embed = [":tdiscuss_lib"],
+)
+
+# Define the filegroup to collect all platform binaries
+filegroup(
+    name = "all_platforms",
+    srcs = [
+        ":tdiscuss-linux-amd64",
+        ":tdiscuss-linux-arm64",
+        ":tdiscuss-darwin-amd64",
+        ":tdiscuss-darwin-arm64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "tdiscuss_lib",
+    srcs = [
+        "config.go",
+        "csrf.go",
+        "db.go",
+        "helpers.go",
+        "main.go",
+        "metrics.go",
+        "models.go",
+        "otel.go",
+        "parser.go",
+        "querier.go",
+        "queries.sql.go",
+        "server.go",
+        "traced_querier.go",
+    ],
+    embedsrcs = [
+        "static/style.css",
+        "tmpl/admin.html",
+        "tmpl/edit-profile.html",
+        "tmpl/edit-thread-post.html",
+        "tmpl/edit-thread.html",
+        "tmpl/error.html",
+        "tmpl/footer.html",
+        "tmpl/header.html",
+        "tmpl/index-thread-partial.html",
+        "tmpl/index.html",
+        "tmpl/member.html",
+        "tmpl/menu.html",
+        "tmpl/newthread.html",
+        "tmpl/thread.html",
+    ],
+    importpath = "github.com/imeyer/tdiscuss",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jackc_pgx_v5//:pgx",
+        "@com_github_jackc_pgx_v5//pgconn",
+        "@com_github_jackc_pgx_v5//pgtype",
+        "@com_github_jackc_pgx_v5//pgxpool",
+        "@com_github_microcosm_cc_bluemonday//:bluemonday",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_github_yuin_goldmark//:goldmark",
+        "@com_github_yuin_goldmark//extension",
+        "@com_github_yuin_goldmark//renderer/html",
+        "@com_github_yuin_goldmark_emoji//:goldmark-emoji",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//hostinfo",
+        "@com_tailscale//ipn/ipnstate",
+        "@com_tailscale//tsnet",
+        "@com_tailscale//types/logger",
+        "@io_opentelemetry_go_contrib_bridges_otelslog//:otelslog",
+        "@io_opentelemetry_go_contrib_processors_minsev//:minsev",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel//semconv/v1.21.0:v1_21_0",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp//:otlploghttp",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp//:otlpmetrichttp",
+        "@io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp//:otlptracehttp",
+        "@io_opentelemetry_go_otel_exporters_prometheus//:prometheus",
+        "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_sdk//resource",
+        "@io_opentelemetry_go_otel_sdk//trace",
+        "@io_opentelemetry_go_otel_sdk_log//:log",
+        "@io_opentelemetry_go_otel_sdk_metric//:metric",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )
