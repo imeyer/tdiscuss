@@ -8,8 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"github.com/prometheus/client_golang/prometheus"
+	"time"
 
 	"tailscale.com/hostinfo"
 )
@@ -27,6 +26,7 @@ var (
 	dataDir             = flag.String("data-location", dataLocation(), "Configuration data location.")
 	debug               = flag.Bool("debug", false, "Enable debug logging")
 	tsnetLog            = flag.Bool("tsnet-log", false, "Enable tsnet logging")
+	otlpMode            = flag.Bool("otlp", false, "Enable OTLP metrics output, IYKYK")
 	version  string     = "dev"
 	gitSha   string     = "no-commit"
 	logLevel slog.Level = slog.LevelInfo
@@ -44,10 +44,31 @@ func main() {
 	logger := newLogger(os.Stdout, &logLevel)
 	logger.Info("starting tdiscuss", slog.String("version", version), slog.String("git_sha", gitSha))
 
-	versionGauge.With(prometheus.Labels{"version": version, "git_commit": gitSha, "hostname": *hostname}).Set(1)
+	config, err := LoadConfig()
+	if err != nil {
+		logger.Error("error loading config", slog.String("error", err.Error()))
+	}
+	config.Logger = logger
+	config.OTLP = *otlpMode
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	telemetry, cleanup, err := setupTelemetry(ctx, config)
+	if err != nil {
+		logger.ErrorContext(ctx, "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(ctx, "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
+
+	config.ServiceVersion = version
+
+	telemetry.Metrics.VersionGauge.Record(ctx, 1)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -59,7 +80,7 @@ func main() {
 
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {
-		logger.Error("failed to connect to	 database", slog.String("error", err.Error()))
+		logger.Error("failed to connect to database", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 	defer dbconn.Close()
@@ -83,6 +104,7 @@ func main() {
 		*hostname,
 		version,
 		gitSha,
+		telemetry,
 	)
 
 	mux := setupMux(dsvc)

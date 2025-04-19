@@ -21,7 +21,7 @@ else
 endif
 
 # Combine platform and architecture
-TARGET := tdiscuss-$(PLATFORM)-$(ARCH)
+TARGET := tdiscuss
 
 # Bazel build command
 BAZEL := bazelisk

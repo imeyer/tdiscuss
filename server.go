@@ -22,6 +22,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
@@ -121,6 +124,7 @@ type DiscussService struct {
 	httpsURL   string
 	version    string
 	gitSha     string
+	telemetry  *TelemetryConfig
 }
 
 func NewDiscussService(tailClient TailscaleClient,
@@ -131,6 +135,7 @@ func NewDiscussService(tailClient TailscaleClient,
 	httpsURL string,
 	version string,
 	gitSha string,
+	telemetry *TelemetryConfig,
 ) *DiscussService {
 	return &DiscussService{
 		tailClient: tailClient,
@@ -141,6 +146,7 @@ func NewDiscussService(tailClient TailscaleClient,
 		httpsURL:   httpsURL,
 		version:    version,
 		gitSha:     gitSha,
+		telemetry:  telemetry,
 	}
 }
 
@@ -177,11 +183,12 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	tailnetMux.HandleFunc("GET /thread/{tid}", CSRFMiddleware(dsvc.ListThreadPosts))
 	tailnetMux.HandleFunc("GET /thread/{tid}/edit", CSRFMiddleware(dsvc.EditThread))
 	tailnetMux.HandleFunc("GET /thread/{tid}/{pid}/edit", CSRFMiddleware(dsvc.EditThreadPost))
-	tailnetMux.Handle("GET /metrics", promhttp.Handler())
+	tailnetMux.Handle("GET /_/metrics", promhttp.Handler())
 	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(fs))))
 
-	// return HistogramHttpHandler(tailnetMux)
-	return UserMiddleware(dsvc, tailnetMux)
+	userMiddleware := UserMiddleware(dsvc, tailnetMux)
+
+	return OTELMiddleware(userMiddleware, dsvc.telemetry)
 }
 
 func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
@@ -272,7 +279,7 @@ type MemberThreadPostTemplateData struct {
 	Subject        template.HTML
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
-	LastViewPosts  interface{}
+	LastViewPosts  any
 	Dot            pgtype.Bool
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
@@ -301,7 +308,7 @@ type ThreadTemplateData struct {
 	Subject        template.HTML
 	Posts          pgtype.Int4
 	Views          pgtype.Int4
-	LastViewPosts  interface{}
+	LastViewPosts  any
 	Dot            string
 	Sticky         pgtype.Bool
 	Locked         pgtype.Bool
@@ -432,8 +439,8 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.logger.Info("success")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-
 }
 
 // CreateThread handles the creation of a new thread.
@@ -909,6 +916,9 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
+	_, span := s.telemetry.Tracer.Start(r.Context(), "GetTailscaleUserEmail")
+	defer span.End()
+
 	user, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
 	if err != nil {
 		s.logger.Debug("get tailscale user email", slog.String("error", err.Error()))
@@ -974,7 +984,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.renderTemplate(w, r, "index.html", map[string]interface{}{
+	s.renderTemplate(w, r, "index.html", map[string]any{
 		"Title":   GetBoardTitle(r),
 		"Threads": threadsParsed,
 		"Version": s.version,
@@ -1067,6 +1077,11 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	s.logger.DebugContext(r.Context(), "entering ListMember()")
 	defer s.logger.DebugContext(r.Context(), "exiting ListMember()")
 
+	ctx, span := s.telemetry.Tracer.Start(r.Context(), "discuss.ListMember.Entry")
+	defer span.End()
+
+	r = r.WithContext(ctx)
+
 	if r.Method != http.MethodGet {
 		s.logger.ErrorContext(r.Context(), http.StatusText(http.StatusMethodNotAllowed))
 		s.renderError(w, http.StatusMethodNotAllowed)
@@ -1121,6 +1136,8 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.SetStatus(codes.Ok, "")
+
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
 		"Title":   GetBoardTitle(r),
 		"Member":  member,
@@ -1167,21 +1184,66 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func OTELMiddleware(next http.Handler, telemetry *TelemetryConfig) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Create a ResponseWriter that captures the status code
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		// Replace numeric IDs in paths with :id placeholder for consistent metrics
+		re := regexp.MustCompile(`/(\d+)`)
+		sanitizedPath := re.ReplaceAllString(r.URL.Path, "/:id")
+
+		ctx, span := telemetry.Tracer.Start(r.Context(), sanitizedPath)
+		defer span.End()
+
+		newr := r.Clone(ctx)
+
+		// Process the request through the next handler
+		next.ServeHTTP(rw, newr)
+
+		// Calculate duration after request completes
+		duration := time.Since(start).Seconds()
+
+		attrs := attribute.NewSet(
+			attribute.String("path", sanitizedPath),
+			attribute.String("method", r.Method),
+			attribute.String("status_code", strconv.Itoa(rw.statusCode)),
+		)
+
+		telemetry.Metrics.RequestCounter.Add(r.Context(), 1,
+			metric.WithAttributeSet(attrs))
+
+		// Record the request duration
+		if telemetry.Metrics.RequestDuration != nil {
+			telemetry.Metrics.RequestDuration.Record(r.Context(), duration,
+				metric.WithAttributeSet(attrs),
+			)
+		}
+	})
+}
+
 // UserMiddleware is a middleware that adds the user's email and ID to the request context.
 func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		email, err := s.GetTailscaleUserEmail(r)
+		ctx, span := s.telemetry.Tracer.Start(r.Context(), "UserMiddleware")
+		defer span.End()
+
+		newr := r.WithContext(ctx)
+
+		email, err := s.GetTailscaleUserEmail(newr)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), "email", email)
+		ctx = context.WithValue(newr.Context(), "email", email)
 
-		boardData, err := s.queries.GetBoardData(r.Context())
+		boardData, err := s.queries.GetBoardData(newr.Context())
 		if err != nil {
-			s.logger.ErrorContext(r.Context(), err.Error())
+			s.logger.ErrorContext(newr.Context(), err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
@@ -1201,7 +1263,7 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 
 		s.logger.DebugContext(ctx, "UserMiddleware", slog.String("email", email), slog.Int64("user_id", user.ID), slog.Bool("is_admin", user.IsAdmin))
 
-		r = r.WithContext(ctx)
+		r = newr.WithContext(ctx)
 
 		next.ServeHTTP(w, r)
 	})

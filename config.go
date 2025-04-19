@@ -10,6 +10,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type Config struct {
+	LogDebug          bool
+	Logger            *slog.Logger
+	ServiceName       string
+	ServiceVersion    string
+	TraceMaxBatchSize int
+	TraceSampleRate   float64
+	OTLP              bool
+}
+
+func LoadConfig() (*Config, error) {
+	config := &Config{
+		LogDebug:          false,
+		ServiceName:       "tdiscuss",
+		TraceMaxBatchSize: 512,
+		TraceSampleRate:   0.25, // Sample 25%
+		OTLP:              false,
+	}
+
+	return config, nil
+}
+
 // PoolConfig function with error handling
 func PoolConfig(dsn *string, logger *slog.Logger) (*pgxpool.Config, error) {
 	const defaultMaxConns = int32(4)

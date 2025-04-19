@@ -14,7 +14,7 @@ import (
 const (
 	csrfTokenLength = 32
 	csrfCookieName  = "csrf_token"
-	csrfHeaderName  = "X-CSRF-Token"
+	csrfHeaderName  = "X-Csrf-Token"
 	csrfContextKey  = "CSRFToken"
 	cleanupInterval = 1 * time.Hour
 	tokenExpiryTime = 12 * time.Hour
@@ -25,27 +25,57 @@ var (
 	tokenStoreMu sync.RWMutex
 	timeNow      = time.Now
 	csrfLogger   *slog.Logger
+
+	// For tests to control the cleanup routine
+	cleanupCtx, cleanupCancel = context.WithCancel(context.Background())
+	cleanupInitialized        = false
+	cleanupInitMu             sync.Mutex
+
+	// For testing - if true, generateCSRFToken will return an error
+	generateTokenError bool
+	generateTokenMu    sync.RWMutex
 )
 
+// SetGenerateTokenError sets the flag to simulate an error in token generation
+// This is for testing purposes only
+func SetGenerateTokenError(shouldError bool) {
+	generateTokenMu.Lock()
+	generateTokenError = shouldError
+	generateTokenMu.Unlock()
+}
+
+// initCSRFLogger sets the logger for CSRF operations
 func initCSRFLogger(logger *slog.Logger) {
 	csrfLogger = logger
 }
 
-func generateCSRFToken() string {
+// generateCSRFToken creates a new random token for CSRF protection
+func generateCSRFToken() (string, error) {
+	// Check test flag first
+	generateTokenMu.RLock()
+	if generateTokenError {
+		generateTokenMu.RUnlock()
+		return "", errors.New("simulated token generation error")
+	}
+	generateTokenMu.RUnlock()
+
 	b := make([]byte, csrfTokenLength)
-	if _, err := rand.Read(b); err != nil {
+	_, err := rand.Read(b)
+	if err != nil {
 		if csrfLogger != nil {
 			csrfLogger.Error("Failed to generate CSRF token", "error", err)
 		}
-		return ""
+		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(b)
+	return base64.StdEncoding.EncodeToString(b), nil
 }
 
+// setCSRFToken creates a new CSRF token, adds it to the response as a cookie,
+// and stores it in the token store
 func setCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
-	token := generateCSRFToken()
-	if token == "" {
-		return "", errors.New("Failed to generate CSRF token")
+	token, err := generateCSRFToken()
+	if err != nil {
+		return "", err
 	}
 
 	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
@@ -67,6 +97,7 @@ func setCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
 	return token, nil
 }
 
+// GetCSRFToken retrieves the CSRF token from the request context
 func GetCSRFToken(r *http.Request) string {
 	if token, ok := r.Context().Value(csrfContextKey).(string); ok {
 		return token
@@ -74,6 +105,7 @@ func GetCSRFToken(r *http.Request) string {
 	return ""
 }
 
+// validateCSRFToken ensures that the request has a valid CSRF token
 func validateCSRFToken(r *http.Request) error {
 	cookie, err := r.Cookie(csrfCookieName)
 	if err != nil {
@@ -125,7 +157,10 @@ func validateCSRFToken(r *http.Request) error {
 	return nil
 }
 
+// CSRFMiddleware provides protection against CSRF attacks
 func CSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	ensureCleanupRoutineStarted()
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		var token string
 		var err error
@@ -153,6 +188,7 @@ func CSRFMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// cleanupExpiredTokens removes expired tokens from the token store
 func cleanupExpiredTokens() {
 	tokenStoreMu.Lock()
 	defer tokenStoreMu.Unlock()
@@ -168,6 +204,7 @@ func cleanupExpiredTokens() {
 	}
 }
 
+// startCleanupRoutine starts a goroutine that periodically cleans up expired tokens
 func startCleanupRoutine(ctx context.Context) {
 	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
@@ -181,6 +218,37 @@ func startCleanupRoutine(ctx context.Context) {
 	}
 }
 
-func init() {
-	go startCleanupRoutine(context.Background())
+// ensureCleanupRoutineStarted makes sure the cleanup routine is running
+func ensureCleanupRoutineStarted() {
+	cleanupInitMu.Lock()
+	defer cleanupInitMu.Unlock()
+
+	if !cleanupInitialized {
+		go startCleanupRoutine(cleanupCtx)
+		cleanupInitialized = true
+	}
+}
+
+// StopCleanupRoutine stops the token cleanup routine (mainly for tests)
+func StopCleanupRoutine() {
+	cleanupInitMu.Lock()
+	defer cleanupInitMu.Unlock()
+
+	if cleanupInitialized {
+		cleanupCancel()
+		// Create new context for future use
+		cleanupCtx, cleanupCancel = context.WithCancel(context.Background())
+		cleanupInitialized = false
+	}
+}
+
+// ResetTokenStore clears the token store (mainly for tests)
+func ResetTokenStore() {
+	tokenStoreMu.Lock()
+	defer tokenStoreMu.Unlock()
+
+	// Clear the map
+	for k := range tokenStore {
+		delete(tokenStore, k)
+	}
 }

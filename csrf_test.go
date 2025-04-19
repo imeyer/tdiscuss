@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
 	"io"
@@ -16,14 +15,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMain(m *testing.M) {
+	// Set up
+	origTimeNow := timeNow
+
+	// Run tests
+	m.Run()
+
+	// Clean up
+	timeNow = origTimeNow
+	ResetTokenStore()
+	StopCleanupRoutine()
+	SetGenerateTokenError(false)
+}
+
 func TestValidateCSRFToken(t *testing.T) {
+	// Reset state before the test
+	ResetTokenStore()
+	SetGenerateTokenError(false)
+
 	// Setup
 	r, _ := http.NewRequest("POST", "/", nil)
 	w := httptest.NewRecorder()
 
 	token, err := setCSRFToken(w, r)
 	if err != nil {
-		t.Errorf("setCSRFToken() error = %v", err)
+		t.Fatalf("setCSRFToken() error = %v", err)
 	}
 
 	// Test valid token
@@ -31,32 +48,24 @@ func TestValidateCSRFToken(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
 
 	err = validateCSRFToken(r)
-	if err != nil {
-		t.Errorf("validateCSRFToken() error = %v", err)
-	}
+	assert.NoError(t, err, "validateCSRFToken() should not error with valid token")
 
 	// Test invalid token
 	r.Header.Set(csrfHeaderName, "invalid_token")
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for invalid token")
-	}
+	assert.Error(t, err, "validateCSRFToken() should error with invalid token")
 
 	// Test missing cookie
 	r, _ = http.NewRequest("POST", "/", nil)
 	r.Header.Set(csrfHeaderName, token)
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for missing cookie")
-	}
+	assert.Error(t, err, "validateCSRFToken() should error with missing cookie")
 
 	// Test missing header
 	r, _ = http.NewRequest("POST", "/", nil)
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: token})
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for missing header")
-	}
+	assert.Error(t, err, "validateCSRFToken() should error with missing header")
 
 	// Test expired token
 	r.Header.Set(csrfHeaderName, token)
@@ -64,19 +73,21 @@ func TestValidateCSRFToken(t *testing.T) {
 	tokenStore[token] = time.Now().Add(-1 * time.Hour)
 	tokenStoreMu.Unlock()
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for expired token")
-	}
+	assert.Error(t, err, "validateCSRFToken() should error with expired token")
 
 	// Test token not in store
+	tokenStoreMu.Lock()
 	delete(tokenStore, token)
+	tokenStoreMu.Unlock()
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for token not in store")
-	}
+	assert.Error(t, err, "validateCSRFToken() should error with token not in store")
 }
 
 func TestCSRFMiddleware(t *testing.T) {
+	// Reset state before the test
+	ResetTokenStore()
+	SetGenerateTokenError(false)
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
@@ -87,14 +98,10 @@ func TestCSRFMiddleware(t *testing.T) {
 	w := httptest.NewRecorder()
 	middleware.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Middleware returned wrong status code for GET: got %v want %v", w.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, w.Code, "Middleware returned wrong status code for GET")
 
 	token := w.Header().Get(csrfHeaderName)
-	if token == "" {
-		t.Error("CSRF token not set in header for GET request")
-	}
+	assert.NotEmpty(t, token, "CSRF token not set in header for GET request")
 
 	// Get the token from the cookie
 	var cookieToken string
@@ -104,9 +111,7 @@ func TestCSRFMiddleware(t *testing.T) {
 			break
 		}
 	}
-	if cookieToken == "" {
-		t.Error("CSRF token not set in cookie for GET request")
-	}
+	assert.NotEmpty(t, cookieToken, "CSRF token not set in cookie for GET request")
 
 	// Test POST request with valid token
 	r, _ = http.NewRequest("POST", "/", strings.NewReader(""))
@@ -115,9 +120,7 @@ func TestCSRFMiddleware(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: cookieToken})
 	middleware.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("Middleware returned wrong status code for valid POST: got %v want %v", w.Code, http.StatusOK)
-	}
+	assert.Equal(t, http.StatusOK, w.Code, "Middleware returned wrong status code for valid POST")
 
 	// Test POST request with invalid token
 	r, _ = http.NewRequest("POST", "/", strings.NewReader(""))
@@ -126,36 +129,28 @@ func TestCSRFMiddleware(t *testing.T) {
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: cookieToken})
 	middleware.ServeHTTP(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Middleware returned wrong status code for invalid POST: got %v want %v", w.Code, http.StatusForbidden)
-	}
+	assert.Equal(t, http.StatusForbidden, w.Code, "Middleware returned wrong status code for invalid POST")
 
-	// Test error in setCSRFToken
-	oldRand := rand.Reader
-	rand.Reader = strings.NewReader("")
-	defer func() { rand.Reader = oldRand }()
+	// Test error in setCSRFToken in a separate subtest to properly isolate error simulation
+	t.Run("Test setCSRFToken error", func(t *testing.T) {
+		// Enable the error flag
+		SetGenerateTokenError(true)
+		// Make sure we reset the flag when we're done
+		defer SetGenerateTokenError(false)
 
-	r, _ = http.NewRequest("GET", "/", nil)
-	w = httptest.NewRecorder()
-	middleware.ServeHTTP(w, r)
+		r, _ := http.NewRequest("GET", "/", nil)
+		w := httptest.NewRecorder()
+		middleware.ServeHTTP(w, r)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("Middleware returned wrong status code for setCSRFToken error: got %v want %v", w.Code, http.StatusInternalServerError)
-	}
-}
-
-// Mock time.Now for testing token expiration
-func mockTimeNow(mockTime time.Time) func() {
-	old := timeNow
-	timeNow = func() time.Time {
-		return mockTime
-	}
-	return func() {
-		timeNow = old
-	}
+		assert.Equal(t, http.StatusInternalServerError, w.Code, "Middleware returned wrong status code for setCSRFToken error")
+	})
 }
 
 func TestTokenExpiration(t *testing.T) {
+	// Reset state before the test
+	ResetTokenStore()
+	SetGenerateTokenError(false)
+
 	originalTimeNow := timeNow
 	defer func() { timeNow = originalTimeNow }()
 
@@ -167,9 +162,7 @@ func TestTokenExpiration(t *testing.T) {
 	r, _ := http.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	token, err := setCSRFToken(w, r)
-	if err != nil {
-		t.Errorf("setCSRFToken() error = %v", err)
-	}
+	assert.NoError(t, err, "setCSRFToken() should not error")
 
 	// Prepare a new request for validation
 	r, _ = http.NewRequest("POST", "/", nil)
@@ -178,27 +171,21 @@ func TestTokenExpiration(t *testing.T) {
 
 	// Token should be valid initially
 	err = validateCSRFToken(r)
-	if err != nil {
-		t.Errorf("validateCSRFToken() error = %v, token should be valid", err)
-	}
+	assert.NoError(t, err, "Token should be valid initially")
 
-	// Set current time to 11 hours from now
+	// Set current time to 11 hours from now (within expiry)
 	timeNow = func() time.Time { return now.Add(11 * time.Hour) }
 
 	// Token should still be valid
 	err = validateCSRFToken(r)
-	if err != nil {
-		t.Errorf("validateCSRFToken() error = %v, token should still be valid", err)
-	}
+	assert.NoError(t, err, "Token should still be valid at 11 hours")
 
-	// Set current time to 15 hours from now
+	// Set current time to 15 hours from now (past expiry)
 	timeNow = func() time.Time { return now.Add(15 * time.Hour) }
 
 	// Token should be expired
 	err = validateCSRFToken(r)
-	if err == nil {
-		t.Error("validateCSRFToken() did not return error for expired token")
-	}
+	assert.Error(t, err, "Token should be expired at 15 hours")
 }
 
 func TestGetCSRFToken(t *testing.T) {
@@ -225,14 +212,16 @@ func TestGetCSRFToken(t *testing.T) {
 			r = r.WithContext(tt.context)
 
 			token := GetCSRFToken(r)
-			if token != tt.expected {
-				t.Errorf("GetCSRFToken() = %v, want %v", token, tt.expected)
-			}
+			assert.Equal(t, tt.expected, token)
 		})
 	}
 }
 
 func TestSetCSRFToken(t *testing.T) {
+	// Reset state before the test
+	ResetTokenStore()
+	SetGenerateTokenError(false)
+
 	tests := []struct {
 		name           string
 		tls            *tls.ConnectionState
@@ -254,9 +243,8 @@ func TestSetCSRFToken(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			token, err := setCSRFToken(w, r)
-			if err != nil {
-				t.Errorf("setCSRFToken() error = %v", err)
-			}
+			assert.NoError(t, err, "setCSRFToken() should not error")
+			assert.NotEmpty(t, token, "setCSRFToken() should return a non-empty token")
 
 			cookies := w.Result().Cookies()
 			var csrfCookie *http.Cookie
@@ -267,50 +255,44 @@ func TestSetCSRFToken(t *testing.T) {
 				}
 			}
 
-			if csrfCookie == nil {
-				t.Fatal("CSRF cookie not set")
-			}
-
-			if csrfCookie.Value != token {
-				t.Errorf("Cookie value (%s) does not match returned token (%s)", csrfCookie.Value, token)
-			}
-
-			if !csrfCookie.HttpOnly {
-				t.Error("CSRF cookie is not HttpOnly")
-			}
-
-			if csrfCookie.SameSite != http.SameSiteStrictMode {
-				t.Error("CSRF cookie SameSite is not set to Strict")
-			}
-			assert.Equal(t, tt.wantSecure, csrfCookie.Secure, "CSRF cookie Secure flag is %v, want %v", csrfCookie.Secure, tt.wantSecure)
+			assert.NotNil(t, csrfCookie, "CSRF cookie not set")
+			assert.Equal(t, token, csrfCookie.Value, "Cookie value does not match returned token")
+			assert.True(t, csrfCookie.HttpOnly, "CSRF cookie is not HttpOnly")
+			assert.Equal(t, http.SameSiteStrictMode, csrfCookie.SameSite, "CSRF cookie SameSite is not set to Strict")
+			assert.Equal(t, tt.wantSecure, csrfCookie.Secure, "CSRF cookie Secure flag is incorrect")
 
 			tokenStoreMu.RLock()
 			expiry, exists := tokenStore[token]
 			tokenStoreMu.RUnlock()
 
 			assert.True(t, exists, "Token not found in token store")
-
 			assert.Less(t, time.Now().Add(tokenExpiryTime).Sub(expiry), time.Second)
 		})
 	}
 }
+
 func TestGenerateCSRFToken(t *testing.T) {
+	// Reset state before the test
+	SetGenerateTokenError(false)
+
 	// Test successful token generation
-	token := generateCSRFToken()
-	if len(token) == 0 {
-		t.Error("generateCSRFToken() returned empty token")
-	}
-	if len(token) != base64.StdEncoding.EncodedLen(csrfTokenLength) {
-		t.Errorf("generateCSRFToken() returned token of incorrect length: got %d, want %d", len(token), base64.StdEncoding.EncodedLen(csrfTokenLength))
-	}
+	token, err := generateCSRFToken()
+	assert.NoError(t, err, "generateCSRFToken() should not error")
+	assert.NotEmpty(t, token, "generateCSRFToken() returned empty token")
+	assert.Equal(t, base64.StdEncoding.EncodedLen(csrfTokenLength), len(token),
+		"generateCSRFToken() returned token of incorrect length")
 
-	// Test error condition
-	oldRand := rand.Reader
-	rand.Reader = strings.NewReader("")
-	defer func() { rand.Reader = oldRand }()
+	// Test error condition in a subtest to properly isolate error simulation
+	t.Run("Test error in token generation", func(t *testing.T) {
+		// Enable the error flag
+		SetGenerateTokenError(true)
+		// Make sure we reset the flag when we're done
+		defer SetGenerateTokenError(false)
 
-	token = generateCSRFToken()
-	assert.Equal(t, "", token)
+		token, err := generateCSRFToken()
+		assert.Error(t, err, "Should return error")
+		assert.Equal(t, "", token, "Should return empty string on error")
+	})
 }
 
 func TestInitCSRFLogger(t *testing.T) {
@@ -328,4 +310,63 @@ func TestInitCSRFLogger(t *testing.T) {
 
 	// Check if the logger was reset correctly
 	assert.Nil(t, csrfLogger)
+}
+
+func TestCleanupExpiredTokens(t *testing.T) {
+	// Reset state before the test
+	ResetTokenStore()
+
+	// Set a fixed time for the test
+	originalTimeNow := timeNow
+	defer func() { timeNow = originalTimeNow }()
+
+	now := time.Now()
+	timeNow = func() time.Time { return now }
+
+	// Create some tokens with different expiry times
+	tokenStoreMu.Lock()
+	tokenStore["expired1"] = now.Add(-1 * time.Hour)
+	tokenStore["expired2"] = now.Add(-5 * time.Minute)
+	tokenStore["valid1"] = now.Add(1 * time.Hour)
+	tokenStore["valid2"] = now.Add(5 * time.Hour)
+	tokenStoreMu.Unlock()
+
+	// Run cleanup
+	cleanupExpiredTokens()
+
+	// Check that expired tokens are removed
+	tokenStoreMu.RLock()
+	_, expired1Exists := tokenStore["expired1"]
+	_, expired2Exists := tokenStore["expired2"]
+	_, valid1Exists := tokenStore["valid1"]
+	_, valid2Exists := tokenStore["valid2"]
+	tokenStoreMu.RUnlock()
+
+	assert.False(t, expired1Exists, "Expired token 'expired1' should be removed")
+	assert.False(t, expired2Exists, "Expired token 'expired2' should be removed")
+	assert.True(t, valid1Exists, "Valid token 'valid1' should be kept")
+	assert.True(t, valid2Exists, "Valid token 'valid2' should be kept")
+}
+
+func TestSetGenerateTokenError(t *testing.T) {
+	// Reset state
+	SetGenerateTokenError(false)
+
+	// Initially, the error flag should be false
+	generateTokenMu.RLock()
+	initialValue := generateTokenError
+	generateTokenMu.RUnlock()
+	assert.False(t, initialValue, "Initial value of generateTokenError should be false")
+
+	// Set the flag to true
+	SetGenerateTokenError(true)
+
+	// Check that the flag was set
+	generateTokenMu.RLock()
+	newValue := generateTokenError
+	generateTokenMu.RUnlock()
+	assert.True(t, newValue, "Value of generateTokenError should be true after setting")
+
+	// Reset the flag back to false for other tests
+	SetGenerateTokenError(false)
 }
