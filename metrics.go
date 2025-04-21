@@ -122,6 +122,13 @@ func initializeHistograms(meter metric.Meter, config *TelemetryConfig) error {
 			Target:      &config.Metrics.RequestDuration,
 			Unit:        "s",
 		},
+		{
+			Buckets:     []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5},
+			Description: "Histogram of DB Query operations",
+			Name:        "db_query_duration_seconds",
+			Target:      &config.Metrics.DBQueryDuration,
+			Unit:        "s",
+		},
 	}
 
 	for _, m := range histogramMetrics {

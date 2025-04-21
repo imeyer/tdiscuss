@@ -25,7 +25,7 @@ func LoadConfig() (*Config, error) {
 		LogDebug:          false,
 		ServiceName:       "tdiscuss",
 		TraceMaxBatchSize: 512,
-		TraceSampleRate:   0.25, // Sample 25%
+		TraceSampleRate:   1.0, // Sample 25%
 		OTLP:              false,
 	}
 

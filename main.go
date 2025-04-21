@@ -95,11 +95,13 @@ func main() {
 	queries := New(dbconn)
 	wrappedQueries := &QueriesWrapper{Queries: queries}
 
+	tracedQueries := NewTracedQueriesWrapper(wrappedQueries, telemetry)
+
 	dsvc := NewDiscussService(
 		lc,
 		logger,
 		dbconn,
-		wrappedQueries,
+		tracedQueries,
 		tmpls,
 		*hostname,
 		version,

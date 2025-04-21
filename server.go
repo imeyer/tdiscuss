@@ -25,6 +25,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 	"tailscale.com/client/tailscale/apitype"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
@@ -445,6 +446,11 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 
 // CreateThread handles the creation of a new thread.
 func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
+	ctx, span := s.telemetry.Tracer.Start(r.Context(), "CreateThread(svc)")
+	defer span.End()
+
+	r = r.WithContext(ctx)
+
 	if err := validateCSRFToken(r); err != nil {
 		s.logger.ErrorContext(r.Context(), "CSRF validation failed", slog.String("error", err.Error()))
 		http.Error(w, "CSRF validation failed", http.StatusForbidden)
@@ -461,6 +467,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.AddEvent("GetUser(r)")
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "CreateThread", slog.String("user", user.Email), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
@@ -468,15 +475,19 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.AddEvent("r.ParseForm")
 	if err := r.ParseForm(); err != nil || !r.Form.Has("subject") || !r.Form.Has("thread_body") {
 		s.logger.DebugContext(r.Context(), "error parsing form", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
+	span.AddEvent("r.ParseSubject")
 	subject := parseHTMLStrict(parseMarkdownToHTML(r.Form.Get("subject")))
+	span.AddEvent("r.ParseBody")
 	body := parseHTMLLessStrict(parseMarkdownToHTML(r.Form.Get("thread_body")))
 
+	span.AddEvent("BeginTxn")
 	tx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error starting transaction", slog.String("SQLError", err.Error()))
@@ -487,6 +498,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	qtx := s.queries.(ExtendedQuerier).WithTx(tx)
 
+	span.AddEvent("qtx.CreateThread")
 	if err := qtx.CreateThread(r.Context(), CreateThreadParams{
 		Subject:      subject,
 		MemberID:     user.ID,
@@ -497,6 +509,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.AddEvent("qtx.GetThreadSequenceId")
 	threadID, err := qtx.GetThreadSequenceId(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting thread sequence ID", slog.String("SQLError", err.Error()))
@@ -504,6 +517,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.AddEvent("qtx.CreateThreadPost")
 	if err := qtx.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadID,
 		Body:     pgtype.Text{Valid: true, String: body},
@@ -514,6 +528,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	span.AddEvent("tx.Commit")
 	if err := tx.Commit(r.Context()); err != nil {
 		s.logger.ErrorContext(r.Context(), "error committing transaction", slog.String("SQLError", err.Error()))
 		s.renderError(w, http.StatusInternalServerError)
@@ -526,6 +541,11 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 // CreateThreadPost handles adding a new post to an existing thread.
 func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request) {
+	ctx, span := s.telemetry.Tracer.Start(r.Context(), "CreateThreadPost")
+	defer span.End()
+
+	r = r.WithContext(ctx)
+
 	if err := validateCSRFToken(r); err != nil {
 		s.logger.ErrorContext(r.Context(), "CSRF validation failed", slog.String("error", err.Error()))
 		http.Error(w, "CSRF validation failed", http.StatusForbidden)
@@ -916,24 +936,34 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
-	_, span := s.telemetry.Tracer.Start(r.Context(), "GetTailscaleUserEmail")
+	ctx, span := s.telemetry.Tracer.Start(r.Context(), "GetTailscaleUserEmail")
 	defer span.End()
 
-	user, err := s.tailClient.WhoIs(r.Context(), r.RemoteAddr)
+	if s.tailClient == nil {
+		return "", fmt.Errorf("TailscaleClient is nil")
+	}
+
+	user, err := s.tailClient.WhoIs(ctx, r.RemoteAddr)
 	if err != nil {
 		s.logger.Debug("get tailscale user email", slog.String("error", err.Error()))
 		return "", err
 	}
 
-	ctx := context.WithValue(r.Context(), "email", user.UserProfile.LoginName)
+	ctx = context.WithValue(ctx, "email", user.UserProfile.LoginName)
 	r = r.WithContext(ctx)
 
+	span.SetStatus(codes.Ok, "")
 	s.logger.Debug("get tailscale user email", slog.String("user", user.UserProfile.LoginName))
 	return user.UserProfile.LoginName, nil
 }
 
 // ListThreads displays the list of threads on the main page.
 func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
+	ctx, span := s.telemetry.Tracer.Start(r.Context(), "ListThreads")
+	defer span.End()
+
+	r = r.WithContext(ctx)
+
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -1227,23 +1257,28 @@ func OTELMiddleware(next http.Handler, telemetry *TelemetryConfig) http.HandlerF
 // UserMiddleware is a middleware that adds the user's email and ID to the request context.
 func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var span trace.Span
 		ctx, span := s.telemetry.Tracer.Start(r.Context(), "UserMiddleware")
 		defer span.End()
 
-		newr := r.WithContext(ctx)
+		r = r.WithContext(ctx)
 
-		email, err := s.GetTailscaleUserEmail(newr)
+		email, err := s.GetTailscaleUserEmail(r)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), err.Error())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
 
-		ctx = context.WithValue(newr.Context(), "email", email)
+		ctx = context.WithValue(r.Context(), "email", email)
 
-		boardData, err := s.queries.GetBoardData(newr.Context())
+		boardData, err := s.queries.GetBoardData(r.Context())
 		if err != nil {
-			s.logger.ErrorContext(newr.Context(), err.Error())
+			s.logger.ErrorContext(r.Context(), err.Error())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
@@ -1254,6 +1289,8 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 		user, err := s.queries.CreateOrReturnID(ctx, email)
 		if err != nil {
 			s.logger.ErrorContext(ctx, err.Error())
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
@@ -1263,9 +1300,9 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 
 		s.logger.DebugContext(ctx, "UserMiddleware", slog.String("email", email), slog.Int64("user_id", user.ID), slog.Bool("is_admin", user.IsAdmin))
 
-		r = newr.WithContext(ctx)
+		span.SetStatus(codes.Ok, "")
 
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

@@ -32,6 +32,7 @@ type TelemetryConfig struct {
 		RequestCounter  metric.Int64Counter
 		VersionGauge    metric.Int64Gauge
 		RequestDuration metric.Float64Histogram
+		DBQueryDuration metric.Float64Histogram
 	}
 	TraceHTTPOptions []otlptracehttp.Option
 	Tracer           trace.Tracer
