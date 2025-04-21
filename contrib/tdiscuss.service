@@ -1,0 +1,11 @@
+[Unit]
+Description=tDiscuss messageboard
+
+[Service]
+User=tdiscuss
+EnvironmentFile=/etc/sysconfig/tdiscuss
+ExecStart=/usr/bin/tdiscuss $OPTIONS
+
+
+[Install]
+WantedBy=multi-user.target

@@ -34,3 +34,5 @@ bazel-*
 
 # Code coverage reports
 genhtml/
+
+.idea/

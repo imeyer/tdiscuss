@@ -5,12 +5,13 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "rules_go", version = "0.50.1", repo_name = "rules_go")
-bazel_dep(name = "gazelle", version = "0.38.0", repo_name = "gazelle")
+bazel_dep(name = "gazelle", version = "0.42.0", repo_name = "gazelle")
+bazel_dep(name = "platforms", version = "0.0.10")
+bazel_dep(name = "rules_go", version = "0.53.0", repo_name = "rules_go")
 bazel_dep(name = "rules_pkg", version = "1.0.1")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.23.2")
+go_sdk.download(version = "1.24.2")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
@@ -24,4 +25,20 @@ use_repo(
     "com_github_yuin_goldmark",
     "com_github_yuin_goldmark_emoji",
     "com_tailscale",
+    "io_opentelemetry_go_contrib_bridges_otelslog",
+    "io_opentelemetry_go_contrib_processors_minsev",
+    "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
+    "io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp",
+    "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp",
+    "io_opentelemetry_go_otel_exporters_prometheus",
+    "io_opentelemetry_go_otel_metric",
+    "io_opentelemetry_go_otel_sdk",
+    "io_opentelemetry_go_otel_sdk_log",
+    "io_opentelemetry_go_otel_sdk_metric",
+    "io_opentelemetry_go_otel_trace",
 )
+
+# rpm = use_extension("@rules_pkg//pkg:extensions/rpm.bzl", "rpm")
+# rpm.toolchain()
+# use_repo(rpm, "rpm_tool")
