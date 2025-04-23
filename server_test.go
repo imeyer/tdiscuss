@@ -33,6 +33,24 @@ func TestEditThread(t *testing.T) {
 		Level:     logLevel,
 	}))
 	tmpl := setupTemplates()
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
+
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -42,6 +60,7 @@ func TestEditThread(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -243,6 +262,25 @@ func TestEditThreadPost(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
+
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
+
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -252,6 +290,7 @@ func TestEditThreadPost(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -509,6 +548,24 @@ func TestEditThreadPostGET(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
+
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -518,6 +575,7 @@ func TestEditThreadPostGET(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -650,9 +708,27 @@ func TestGetTailscaleUserEmail(t *testing.T) {
 			}
 			var logLevel slog.Level = slog.LevelInfo
 			logger := newLogger(io.Discard, &logLevel)
+			config, err := LoadConfig()
+			if err != nil {
+				t.Error(err)
+			}
+			config.TraceSampleRate = 0.0
+			config.Logger = logger
+			telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+			if err != nil {
+				logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+			}
+			defer func() {
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := cleanup(cleanupCtx); err != nil {
+					logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+				}
+			}()
 			ds := &DiscussService{
 				tailClient: mockTailscaleClient,
 				logger:     logger,
+				telemetry:  telemetry,
 			}
 
 			req, err := http.NewRequest("GET", "/", nil)
@@ -780,6 +856,23 @@ func TestListMember(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -789,6 +882,7 @@ func TestListMember(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -931,6 +1025,23 @@ func TestListThreadPosts(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -940,6 +1051,7 @@ func TestListThreadPosts(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -1072,7 +1184,23 @@ func TestListThreads(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
-
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -1082,6 +1210,7 @@ func TestListThreads(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	// Create a new HTTP request
@@ -1116,7 +1245,7 @@ func TestNewDiscussService(t *testing.T) {
 	version := "1.0"
 	gitSha := "abc123"
 
-	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha)
+	ds := NewDiscussService(mockTailscaleClient, logger, dbconn, queries, tmpl, httpsURL, version, gitSha, nil)
 
 	assert.Equal(t, mockTailscaleClient, ds.tailClient, "expected tailClient to be %v, got %v", mockTailscaleClient, ds.tailClient)
 	assert.Equal(t, logger, ds.logger, "expected logger to be %v, got %v", logger, ds.logger)
@@ -1133,6 +1262,23 @@ func TestUserMiddleware(t *testing.T) {
 	mockTailscaleClient := &MockTailscaleClient{}
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	tmpl := setupTemplates()
+	config, err := LoadConfig()
+	if err != nil {
+		t.Error(err)
+	}
+	config.TraceSampleRate = 0.0
+	config.Logger = logger
+	telemetry, cleanup, err := setupTelemetry(t.Context(), config)
+	if err != nil {
+		logger.ErrorContext(t.Context(), "failed to setup telemetry: %w", slog.String("error", err.Error()))
+	}
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := cleanup(cleanupCtx); err != nil {
+			logger.ErrorContext(t.Context(), "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+		}
+	}()
 	ds := &DiscussService{
 		tailClient: mockTailscaleClient,
 		logger:     logger,
@@ -1142,6 +1288,7 @@ func TestUserMiddleware(t *testing.T) {
 		httpsURL:   "https://example.com",
 		version:    "1.0",
 		gitSha:     "abc123",
+		telemetry:  telemetry,
 	}
 
 	tests := []struct {
@@ -1314,7 +1461,6 @@ func (m *MockQueries) GetBoardData(ctx context.Context) (GetBoardDataRow, error)
 		Title:      "Mock Board Title",
 		ID:         1,
 	}, nil
-
 }
 
 func (m *MockQueries) GetMember(ctx context.Context, id int64) (GetMemberRow, error) {
