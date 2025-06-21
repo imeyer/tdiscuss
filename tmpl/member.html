@@ -20,25 +20,25 @@
                 {{ if ne .Member.Location.String "" }}
                 <div class="profile-field">
                     <div class="profile-field-label">Location</div>
-                    <div class="profile-field-value">{{ .Member.Location.String }}</div>
+                    <div class="profile-field-value">{{ .Member.Location.String | html }}</div>
                 </div>
                 {{ end }}
                 {{ if ne .Member.Pronouns.String "" }}
                 <div class="profile-field">
                     <div class="profile-field-label">Pronouns</div>
-                    <div class="profile-field-value">{{ .Member.Pronouns.String }}</div>
+                    <div class="profile-field-value">{{ .Member.Pronouns.String | html }}</div>
                 </div>
                 {{ end }}
                 {{ if ne .Member.PreferredName.String "" }}
                 <div class="profile-field">
                     <div class="profile-field-label">Preferred Name</div>
-                    <div class="profile-field-value">{{ .Member.PreferredName.String }}</div>
+                    <div class="profile-field-value">{{ .Member.PreferredName.String | html }}</div>
                 </div>
                 {{ end }}
                 {{ if ne .Member.Bio.String "" }}
                 <div class="profile-field">
                     <div class="profile-field-label">Bio</div>
-                    <div class="profile-field-value">{{ .Member.Bio.String }}</div>
+                    <div class="profile-field-value">{{ .Member.Bio.String | html }}</div>
                 </div>
                 {{ end }}
                 <div class="profile-field">

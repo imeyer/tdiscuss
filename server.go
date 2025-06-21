@@ -188,8 +188,9 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	tailnetMux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(fs))))
 
 	userMiddleware := UserMiddleware(dsvc, tailnetMux)
+	securityMiddleware := SecurityHeadersMiddleware(userMiddleware)
 
-	return OTELMiddleware(userMiddleware, dsvc.telemetry)
+	return OTELMiddleware(securityMiddleware, dsvc.telemetry)
 }
 
 func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
@@ -1303,6 +1304,40 @@ func UserMiddleware(s *DiscussService, next http.Handler) http.HandlerFunc {
 		span.SetStatus(codes.Ok, "")
 
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// SecurityHeadersMiddleware adds security headers to all HTTP responses
+func SecurityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Basic security headers
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+		
+		// Strict Transport Security (HSTS) - only on HTTPS
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+		}
+		
+		// Content Security Policy - restrictive by default
+		// Note: We use 'unsafe-inline' for styles due to the embedded CSS
+		// In production, consider moving styles to external files with hashes
+		w.Header().Set("Content-Security-Policy", 
+			"default-src 'self'; "+
+			"script-src 'self'; "+
+			"style-src 'self' 'unsafe-inline'; "+
+			"img-src 'self' data: https:; "+
+			"font-src 'self'; "+
+			"connect-src 'self'; "+
+			"frame-ancestors 'none'; "+
+			"base-uri 'self'; "+
+			"form-action 'self'; "+
+			"upgrade-insecure-requests")
+		
+		next.ServeHTTP(w, r)
 	})
 }
 

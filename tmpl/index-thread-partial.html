@@ -13,7 +13,7 @@
         {{ range .Threads }}
         <tr>
             <td class="col-user"><a href="/member/{{ .Lastid.Int64 }}">{{ .Email.String }}</a></td>
-            <td class="col-subject"><a href="/thread/{{ .ThreadID }}">{{ .Subject }}</a> {{ if .CanEdit.Bool }}<a
+            <td class="col-subject"><a href="/thread/{{ .ThreadID }}">{{ .Subject | html }}</a> {{ if .CanEdit.Bool }}<a
                     href="/thread/{{ .ThreadID }}/edit"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                         role="img" fill="currentColor" viewBox="0 0 16 16">
                         <title>Edit thread</title>

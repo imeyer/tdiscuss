@@ -136,5 +136,8 @@ func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, err
 func setupTemplates() *template.Template {
 	return template.Must(template.New("any").Funcs(template.FuncMap{
 		"formatTimestamp": formatTimestamp,
+		"safeHTML": func(s string) template.HTML {
+			return template.HTML(s)
+		},
 	}).ParseFS(templateFiles, "tmpl/*html"))
 }
