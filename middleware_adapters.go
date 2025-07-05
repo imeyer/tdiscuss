@@ -1,0 +1,156 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/imeyer/tdiscuss/middleware"
+	"tailscale.com/client/tailscale/apitype"
+)
+
+// TailscaleClientAdapter adapts the actual Tailscale client to the middleware interface
+type TailscaleClientAdapter struct {
+	client TailscaleClient
+}
+
+// NewTailscaleClientAdapter creates a new adapter
+func NewTailscaleClientAdapter(client TailscaleClient) *TailscaleClientAdapter {
+	return &TailscaleClientAdapter{client: client}
+}
+
+// WhoIs implements the middleware.TailscaleClient interface
+func (a *TailscaleClientAdapter) WhoIs(ctx context.Context, remoteAddr string) (*middleware.WhoIsResponse, error) {
+	resp, err := a.client.WhoIs(ctx, remoteAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert the actual response to the middleware interface
+	if resp.UserProfile == nil {
+		return &middleware.WhoIsResponse{}, nil
+	}
+
+	return &middleware.WhoIsResponse{
+		UserProfile: &middleware.UserProfile{
+			LoginName: resp.UserProfile.LoginName,
+		},
+	}, nil
+}
+
+// QuerierAdapter adapts the actual database querier to the middleware interface
+type QuerierAdapter struct {
+	queries Querier
+}
+
+// NewQuerierAdapter creates a new adapter
+func NewQuerierAdapter(queries Querier) *QuerierAdapter {
+	return &QuerierAdapter{queries: queries}
+}
+
+// CreateOrReturnID implements the middleware.Querier interface
+func (a *QuerierAdapter) CreateOrReturnID(ctx context.Context, email string) (middleware.CreateOrReturnIDRow, error) {
+	row, err := a.queries.CreateOrReturnID(ctx, email)
+	if err != nil {
+		return middleware.CreateOrReturnIDRow{}, err
+	}
+
+	return middleware.CreateOrReturnIDRow{
+		ID:        row.ID,
+		IsAdmin:   row.IsAdmin,
+		IsBlocked: row.IsBlocked,
+	}, nil
+}
+
+// GetBoardData implements the middleware.BoardDataQuerier interface
+func (a *QuerierAdapter) GetBoardData(ctx context.Context) (interface{}, error) {
+	boardData, err := a.queries.GetBoardData(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Return the board data as a value, not a pointer
+	return boardData, nil
+}
+
+// Helper function to convert apitype.WhoIsResponse to middleware.WhoIsResponse
+func convertWhoIsResponse(resp *apitype.WhoIsResponse) *middleware.WhoIsResponse {
+	if resp == nil {
+		return nil
+	}
+
+	result := &middleware.WhoIsResponse{}
+
+	if resp.UserProfile != nil {
+		result.UserProfile = &middleware.UserProfile{
+			LoginName: resp.UserProfile.LoginName,
+		}
+	}
+
+	return result
+}
+
+// ConvertTelemetryConfig converts the main TelemetryConfig to middleware.TelemetryConfig
+func ConvertTelemetryConfig(tc *TelemetryConfig) *middleware.TelemetryConfig {
+	if tc == nil {
+		return nil
+	}
+
+	// Pass the actual OpenTelemetry types directly
+	return &middleware.TelemetryConfig{
+		Tracer: tc.Tracer,
+		Meter:  tc.Meter,
+		Metrics: middleware.TelemetryMetrics{
+			RequestCounter:  tc.Metrics.RequestCounter,
+			RequestDuration: tc.Metrics.RequestDuration,
+			ErrorCounter:    tc.Metrics.ErrorCounter,
+		},
+	}
+}
+
+// GetUser is an adapter function that retrieves the user from the request context
+// This maintains compatibility with the old code while using the new middleware
+func GetUser(r *http.Request) (User, error) {
+	user, ok := middleware.GetUser(r.Context())
+	if !ok || user == nil {
+		return User{}, errors.New("user not found in context")
+	}
+
+	return User{
+		ID:        user.ID,
+		Email:     user.Email,
+		IsAdmin:   user.IsAdmin,
+		IsBlocked: user.IsBlocked,
+	}, nil
+}
+
+// GetCSRFToken is an adapter function that retrieves the CSRF token from the request context
+// This maintains compatibility with the old code while using the new middleware
+func GetCSRFToken(r *http.Request) string {
+	// First try the new middleware way
+	if token := middleware.GetCSRFToken(r.Context()); token != "" {
+		return token
+	}
+
+	// If not in context, try to get from cookie (for cases where middleware set it)
+	if cookie, err := r.Cookie("csrf_token"); err == nil {
+		return cookie.Value
+	}
+
+	// Fall back to the old way for test compatibility
+	return GetCSRFTokenOld(r)
+}
+
+// validateCSRFToken is an adapter function for CSRF token validation
+// This maintains compatibility with the old code
+func validateCSRFToken(r *http.Request) error {
+	// The middleware already validates CSRF tokens for POST/PUT/PATCH/DELETE
+	// This function is now just for compatibility
+	// If we reach here and it's a state-changing method, the middleware already validated
+	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" {
+		// Token was already validated by middleware
+		return nil
+	}
+
+	// For other methods or tests, use the old implementation
+	return validateCSRFTokenOld(r)
+}

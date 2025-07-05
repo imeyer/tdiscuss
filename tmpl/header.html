@@ -6,9 +6,13 @@
     <title>{{ .Title }}</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v={{ .Version }}">
+    <script src="/static/theme.js?v={{ .Version }}"></script>
 </head>
 
 <body>
-    <span class="board-title">{{ .Title }}</span>
+    <div id="container">
+        <div id="header">
+            <h1>{{ .Title }}</h1>
+        </div>
     {{end}}

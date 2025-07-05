@@ -15,7 +15,7 @@ SELECT currval('thread_id_seq');
 SELECT currval('thread_id_post_seq');
 
 -- name: CreateOrReturnID :one
-SELECT id::bigint, is_admin::boolean FROM createOrReturnID($1);
+SELECT id::bigint, is_admin::boolean, is_blocked::boolean FROM createOrReturnID($1);
 
 -- name: GetMemberId :one
 SELECT id FROM member WHERE email = $1;
@@ -205,3 +205,8 @@ UPDATE thread_post SET
 WHERE id = $2
   AND member_id = $3
   AND date_posted >= NOW() - INTERVAL '900 seconds';
+
+-- name: BlockMember :exec
+UPDATE member SET
+  is_blocked = true
+WHERE id = $1;

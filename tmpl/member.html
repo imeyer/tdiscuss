@@ -3,20 +3,24 @@
 {{ template "menu" . }}
 
 {{ if .Member }}
-
-<table class="profile-table">
-    <tr>
-        <td class="profile-column">
+<div class="member-profile-container">
+    <div class="member-profile-card">
+        <div class="member-profile-header">
             <div class="profile-photo">
                 {{ if ne .Member.PhotoUrl.String "" }}
-                <img src="{{ .Member.PhotoUrl.String }}" />
+                <img src="{{ .Member.PhotoUrl.String }}" alt="Profile photo" />
                 {{ else }}
-                NO PHOTO
+                <span>NO PHOTO</span>
                 {{ end }}
             </div>
-        </td>
-        <td class="info-column">
-            <div class="content-container">
+            <div class="profile-info">
+                <div class="profile-name">
+                    {{ if ne .Member.PreferredName.String "" }}
+                        {{ .Member.PreferredName.String }}
+                    {{ else }}
+                        {{ .User.Email }}
+                    {{ end }}
+                </div>
                 {{ if ne .Member.Location.String "" }}
                 <div class="profile-field">
                     <div class="profile-field-label">Location</div>
@@ -29,37 +33,35 @@
                     <div class="profile-field-value">{{ .Member.Pronouns.String | html }}</div>
                 </div>
                 {{ end }}
-                {{ if ne .Member.PreferredName.String "" }}
                 <div class="profile-field">
-                    <div class="profile-field-label">Preferred Name</div>
-                    <div class="profile-field-value">{{ .Member.PreferredName.String | html }}</div>
-                </div>
-                {{ end }}
-                {{ if ne .Member.Bio.String "" }}
-                <div class="profile-field">
-                    <div class="profile-field-label">Bio</div>
-                    <div class="profile-field-value">{{ .Member.Bio.String | html }}</div>
-                </div>
-                {{ end }}
-                <div class="profile-field">
-                    <div class="profile-field-label">Joined on</div>
+                    <div class="profile-field-label">Joined</div>
                     <div class="profile-field-value">{{ .Member.DateJoined.Time | formatTimestamp }}</div>
                 </div>
-                {{ if .Threads }}
-                <div class="thread-content-row">
-                    {{ template "index-thread-partial" . }}
-                </div>
-                {{else}}
-                <div class="content-row">
-                    Nothing posted yet
-                </div>
-                {{end}}
             </div>
-        </td>
-    </tr>
-</table>
+        </div>
+        
+        {{ if ne .Member.Bio.String "" }}
+        <div class="profile-bio">
+            <div class="profile-field">
+                <div class="profile-field-label">Bio</div>
+                <div class="profile-field-value">{{ .Member.Bio.String | html }}</div>
+            </div>
+        </div>
+        {{ end }}
+        
+        <div class="profile-posts">
+            <h3 class="profile-posts-header">Recent Threads</h3>
+            {{ template "member-threads-partial" . }}
+        </div>
+    </div>
+</div>
 {{ else }}
-<h1>Can not find member</h1>
+<div class="member-profile-container">
+    <div class="member-profile-card">
+        <h2>Member not found</h2>
+        <p>The member you're looking for doesn't exist.</p>
+    </div>
+</div>
 {{ end }}
 
 {{ template "footer" . }}

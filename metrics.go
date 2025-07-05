@@ -82,7 +82,7 @@ func initializeGauges(meter metric.Meter, config *TelemetryConfig) error {
 	}{
 		{
 			Name:        "tdiscuss_build_info",
-			Description: "A gauge with version and git commit information",
+			Description: "Build information about tdiscuss (version, git_sha). Value is always 1.",
 			Target:      &config.Metrics.VersionGauge,
 		},
 	}

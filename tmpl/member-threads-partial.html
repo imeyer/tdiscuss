@@ -1,0 +1,26 @@
+{{ define "member-threads-partial" }}
+{{ if .Threads }}
+<table>
+    <thead>
+        <tr>
+            <th class="col-subject">subject</th>
+            <th class="col-posts">posts</th>
+            <th class="col-date">last activity</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{ range .Threads }}
+        <tr>
+            <td class="col-subject"><a href="/thread/{{ .ThreadID }}">{{ .Subject | html }}</a></td>
+            <td class="col-posts">{{ .Posts.Int32 }}</td>
+            <td class="col-date">{{ .DateLastPosted.Time | formatTimestamp }}</td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
+{{else}}
+<div class="no-posts">
+    No posts yet
+</div>
+{{ end }}
+{{ end }}

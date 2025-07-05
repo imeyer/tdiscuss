@@ -170,7 +170,7 @@ func (t *TracedQueriesWrapper) GetMember(ctx context.Context, id int64) (GetMemb
 
 	span.SetAttributes(
 		attribute.Int64("member.id", id),
-		attribute.String("member.email", row.Email),
+		attribute.String("member.email_hash", hashEmail(row.Email)),
 		attribute.Float64("request.duration", duration),
 	)
 
@@ -196,7 +196,7 @@ func (t *TracedQueriesWrapper) GetMemberId(ctx context.Context, email string) (i
 	}
 
 	span.SetAttributes(
-		attribute.String("member.email", email),
+		attribute.String("member.email_hash", hashEmail(email)),
 		attribute.Int64("member.id", id),
 		attribute.Float64("request.duration", duration),
 	)
@@ -383,7 +383,7 @@ func (t *TracedQueriesWrapper) ListThreadPosts(ctx context.Context, arg ListThre
 
 	span.SetAttributes(
 		attribute.Int64("thread.id", arg.ThreadID),
-		attribute.String("user.email", arg.Email),
+		attribute.String("user.email_hash", hashEmail(arg.Email)),
 		attribute.Int("result.count", len(rows)),
 		attribute.Float64("request.duration", duration),
 	)
@@ -410,7 +410,7 @@ func (t *TracedQueriesWrapper) ListThreads(ctx context.Context, arg ListThreadsP
 	}
 
 	span.SetAttributes(
-		attribute.String("user.email", arg.Email),
+		attribute.String("user.email_hash", hashEmail(arg.Email)),
 		attribute.Int64("member.id", arg.MemberID),
 		attribute.Int("result.count", len(rows)),
 		attribute.Float64("request.duration", duration),
@@ -550,6 +550,32 @@ func (t *TracedQueriesWrapper) UpdateThreadPost(ctx context.Context, arg UpdateT
 	)
 
 	t.recordMetrics(ctx, "UpdateThreadPost", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return nil
+}
+
+// BlockMember implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) BlockMember(ctx context.Context, id int64) error {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "BlockMember(query)")
+	defer span.End()
+
+	start := time.Now()
+	err := t.wrapped.BlockMember(ctx, id)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("member.id", id),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "BlockMember", duration)
 	span.SetStatus(codes.Ok, "")
 
 	return nil

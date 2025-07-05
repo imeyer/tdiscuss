@@ -54,7 +54,15 @@ func GetBufferSize() int64 {
 func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func(context.Context) error, error) {
 	telemetryConfig := &TelemetryConfig{}
 
+	// Log the version being set
+	config.Logger.Info("Setting up OTEL resource",
+		slog.String("service_name", config.ServiceName),
+		slog.String("service_version", config.ServiceVersion))
+
 	res, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithProcess(),
+		resource.WithTelemetrySDK(),
 		resource.WithAttributes(
 			semconv.ServiceNamespace("tdiscuss"),
 			semconv.ServiceName(config.ServiceName),

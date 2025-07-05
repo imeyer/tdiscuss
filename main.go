@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"tailscale.com/hostinfo"
 )
 
@@ -18,8 +20,8 @@ const BOARD_TITLE string = "tdiscuss - A Discussion Board for your Tailnet"
 //go:embed tmpl/*.html
 var templateFiles embed.FS
 
-//go:embed static/style.css
-var cssFile embed.FS
+//go:embed static/*
+var staticFiles embed.FS
 
 var (
 	hostname            = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
@@ -50,6 +52,7 @@ func main() {
 	}
 	config.Logger = logger
 	config.OTLP = *otlpMode
+	config.ServiceVersion = version // Set version BEFORE setupTelemetry
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -66,17 +69,24 @@ func main() {
 		}
 	}()
 
-	config.ServiceVersion = version
-
-	telemetry.Metrics.VersionGauge.Record(ctx, 1)
+	// Record version information as metric attributes
+	telemetry.Metrics.VersionGauge.Record(ctx, 1,
+		metric.WithAttributes(
+			attribute.String("version", version),
+			attribute.String("git_sha", gitSha),
+		),
+	)
 
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Handle common shutdown signals
+	signal.Notify(sigChan,
+		syscall.SIGINT,  // Ctrl+C
+		syscall.SIGTERM, // Termination request
+		syscall.SIGQUIT, // Quit from keyboard
+		syscall.SIGHUP,  // Hang up detected on controlling terminal
+	)
 
-	// Enabling logging within csrf.go
-	if *debug {
-		initCSRFLogger(logger.With("component", "csrf"))
-	}
+	// CSRF is now handled by middleware, no need for separate logging
 
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {

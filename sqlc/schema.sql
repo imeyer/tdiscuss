@@ -19,6 +19,7 @@ CREATE TABLE member
   email                varchar NOT NULL CHECK(email <> ''), -- email used to sign up
   id                   bigserial UNIQUE PRIMARY KEY,        -- id
   is_admin             boolean DEFAULT false,               -- is admin?
+  is_blocked           boolean DEFAULT false,               -- is blocked?
   last_post            timestamp,                           -- last post to board
   last_view            timestamp,                           -- last view of board
   total_thread_posts   int DEFAULT 0,                       -- member's total posts
@@ -200,13 +201,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE OR REPLACE FUNCTION createOrReturnID(p_email VARCHAR(255))
-RETURNS TABLE (id BIGINT, is_admin BOOLEAN) AS $$
+RETURNS TABLE (id BIGINT, is_admin BOOLEAN, is_blocked BOOLEAN) AS $$
 DECLARE
     v_id BIGINT;
     v_is_admin BOOLEAN;
+    v_is_blocked BOOLEAN;
     v_member_count INTEGER;
 BEGIN
     v_is_admin := false;
+    v_is_blocked := false;
 
     -- If there are no members, make this member an admin
     SELECT count(member.id) INTO v_member_count
@@ -215,11 +218,11 @@ BEGIN
     RAISE NOTICE 'initial v_member_count: %', v_member_count;
 
     -- Try to find the existing email
-    SELECT member.id, COALESCE(member.is_admin, false) INTO v_id, v_is_admin
+    SELECT member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked
     FROM member
     WHERE member.email = p_email;
 
-    RAISE NOTICE 'After SELECT: v_id = %, v_is_admin = %', v_id, v_is_admin;
+    RAISE NOTICE 'After SELECT: v_id = %, v_is_admin = %, v_is_blocked = %', v_id, v_is_admin, v_is_blocked;
 
     IF v_member_count = 0 THEN
         v_is_admin = true;
@@ -229,17 +232,17 @@ BEGIN
 
     -- If the email doesn't exist, create a new record
     IF v_id IS NULL THEN
-        INSERT INTO member (email, is_admin)
-        VALUES (p_email, v_is_admin)
-        RETURNING member.id, COALESCE(member.is_admin, false) INTO v_id, v_is_admin;
-        RAISE NOTICE 'After INSERT: v_id = %, v_is_admin = %', v_id, v_is_admin;
+        INSERT INTO member (email, is_admin, is_blocked)
+        VALUES (p_email, v_is_admin, v_is_blocked)
+        RETURNING member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked;
+        RAISE NOTICE 'After INSERT: v_id = %, v_is_admin = %, v_is_blocked = %', v_id, v_is_admin, v_is_blocked;
 
         INSERT INTO member_profile (member_id)
         VALUES (v_id);
     END IF;
 
     -- Return the ID (either existing or newly created)
-    RETURN QUERY SELECT v_id, v_is_admin;
+    RETURN QUERY SELECT v_id, v_is_admin, v_is_blocked;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -248,6 +251,7 @@ CREATE UNIQUE INDEX member_email_lower_index ON member(LOWER(email));
 CREATE UNIQUE INDEX member_email_index ON member(email);
 CREATE INDEX member_last_post_index ON member(last_post);
 CREATE INDEX member_last_view_index ON member(last_view);
+CREATE INDEX member_is_blocked_index ON member(is_blocked);
 
 CREATE TRIGGER member_sync AFTER INSERT OR DELETE ON member
   FOR EACH ROW EXECUTE PROCEDURE member_sync();
