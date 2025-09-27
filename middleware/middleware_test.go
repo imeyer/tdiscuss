@@ -328,65 +328,7 @@ func TestRequestSizeLimitMiddleware_ReadPartially(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "read")
 }
 
-func TestCSRFTokenMiddleware(t *testing.T) {
-	config := defaultSecurityConfig()
-	middleware := csrfTokenMiddleware(config)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get token from context
-		token := GetCSRFToken(r.Context())
-		w.Write([]byte(token))
-	})
-
-	wrapped := middleware(handler)
-
-	t.Run("generates new token on first request", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/", nil)
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		// Check cookie was set
-		cookies := w.Result().Cookies()
-		var csrfCookie *http.Cookie
-		for _, c := range cookies {
-			if c.Name == config.CSRFCookieName {
-				csrfCookie = c
-				break
-			}
-		}
-
-		assert.NotNil(t, csrfCookie, "CSRF cookie should be set")
-		assert.NotEmpty(t, csrfCookie.Value, "CSRF token should not be empty")
-		assert.True(t, csrfCookie.HttpOnly, "CSRF cookie should be HttpOnly")
-		assert.Equal(t, http.SameSiteLaxMode, csrfCookie.SameSite, "CSRF cookie should have Lax SameSite")
-
-		// Check token is available in context
-		body := w.Body.String()
-		assert.Equal(t, csrfCookie.Value, body, "Token in context should match cookie")
-	})
-
-	t.Run("reuses existing token", func(t *testing.T) {
-		existingToken := "existing_token_value"
-		req := httptest.NewRequest("GET", "/", nil)
-		req.AddCookie(&http.Cookie{
-			Name:  config.CSRFCookieName,
-			Value: existingToken,
-		})
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		// Should not set a new cookie
-		cookies := w.Result().Cookies()
-		assert.Empty(t, cookies, "Should not set new cookie when token exists")
-
-		// Should use existing token
-		body := w.Body.String()
-		assert.Equal(t, existingToken, body, "Should use existing token")
-	})
-}
-
+// TestCSRFProtectionMiddleware tests the Go 1.25 built-in CSRF protection
 func TestCSRFProtectionMiddleware(t *testing.T) {
 	config := defaultSecurityConfig()
 	middleware := csrfProtectionMiddleware(config)
@@ -398,7 +340,7 @@ func TestCSRFProtectionMiddleware(t *testing.T) {
 
 	wrapped := middleware(handler)
 
-	t.Run("allows safe methods without token", func(t *testing.T) {
+	t.Run("allows safe methods", func(t *testing.T) {
 		safeMethods := []string{"GET", "HEAD", "OPTIONS"}
 
 		for _, method := range safeMethods {
@@ -407,136 +349,59 @@ func TestCSRFProtectionMiddleware(t *testing.T) {
 
 			wrapped.ServeHTTP(w, req)
 
-			assert.Equal(t, http.StatusOK, w.Code, "Should allow %s without CSRF token", method)
+			assert.Equal(t, http.StatusOK, w.Code, "Should allow %s without additional checks", method)
 		}
 	})
 
-	t.Run("blocks unsafe methods without token", func(t *testing.T) {
+	t.Run("blocks cross-origin requests for unsafe methods", func(t *testing.T) {
 		unsafeMethods := []string{"POST", "PUT", "PATCH", "DELETE"}
 
 		for _, method := range unsafeMethods {
 			req := httptest.NewRequest(method, "/", nil)
+			// Simulate a cross-origin request
+			req.Header.Set("Origin", "https://evil.com")
 			w := httptest.NewRecorder()
 
 			wrapped.ServeHTTP(w, req)
 
-			assert.Equal(t, http.StatusForbidden, w.Code, "Should block %s without CSRF token", method)
-			assert.Contains(t, w.Body.String(), "CSRF token missing", "Should return CSRF error message")
+			// The exact status depends on Go 1.25's implementation
+			// but it should reject cross-origin requests
+			assert.NotEqual(t, http.StatusOK, w.Code, "Should block cross-origin %s", method)
 		}
-	})
-
-	t.Run("blocks with mismatched tokens", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/", nil)
-		req.AddCookie(&http.Cookie{
-			Name:  config.CSRFCookieName,
-			Value: "cookie_token",
-		})
-		req.Header.Set(config.CSRFHeaderName, "different_token")
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusForbidden, w.Code, "Should block request with mismatched tokens")
-		assert.Contains(t, w.Body.String(), "CSRF token invalid", "Should return CSRF error message")
-	})
-
-	t.Run("allows with matching header token", func(t *testing.T) {
-		token := generateCSRFToken()
-		req := httptest.NewRequest("POST", "/", nil)
-		req.AddCookie(&http.Cookie{
-			Name:  config.CSRFCookieName,
-			Value: token,
-		})
-		req.Header.Set(config.CSRFHeaderName, token)
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code, "Should allow request with matching tokens in header")
-	})
-
-	t.Run("allows with matching form token", func(t *testing.T) {
-		token := generateCSRFToken()
-		form := "csrf_token=" + token + "&other=data"
-		req := httptest.NewRequest("POST", "/", strings.NewReader(form))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.AddCookie(&http.Cookie{
-			Name:  config.CSRFCookieName,
-			Value: token,
-		})
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code, "Should allow request with matching tokens in form")
 	})
 }
 
-func TestCSRFMiddlewareIntegration(t *testing.T) {
-	// Test CSRF protection integrated with middleware chain
-	logger := NewTestLogger()
-	telemetry := &TelemetryConfig{}
-	authProvider := &mockAuthProvider{}
 
-	ms := newMiddlewareSetup(logger, telemetry, authProvider)
+func TestCSRFMiddlewareIntegration(t *testing.T) {
+	// Test CSRF protection with a simpler approach
+	config := defaultSecurityConfig()
+	csrfMiddleware := csrfProtectionMiddleware(config)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := GetCSRFToken(r.Context())
-		w.Write([]byte("token:" + token))
+		w.Write([]byte("success"))
 	})
 
-	t.Run("public chain includes CSRF token generation", func(t *testing.T) {
-		chain := ms.CreatePublicChain()
-		wrapped := chain.Then(handler)
+	t.Run("CSRF protection blocks cross-origin requests", func(t *testing.T) {
+		wrapped := csrfMiddleware(handler)
 
-		req := httptest.NewRequest("GET", "/", nil)
-		w := httptest.NewRecorder()
-
-		wrapped.ServeHTTP(w, req)
-
-		// Check CSRF cookie was set
-		cookies := w.Result().Cookies()
-		var found bool
-		for _, c := range cookies {
-			if c.Name == "csrf_token" {
-				found = true
-				assert.NotEmpty(t, c.Value, "CSRF token should not be empty")
-				break
-			}
-		}
-		assert.True(t, found, "CSRF cookie should be set by public chain")
-
-		// Check token is available in handler
-		assert.Contains(t, w.Body.String(), "token:", "Handler should receive CSRF token")
-		assert.NotEqual(t, "token:", w.Body.String(), "Token should not be empty")
-	})
-
-	t.Run("authenticated chain includes CSRF protection for state-changing methods", func(t *testing.T) {
-		chain := ms.CreateAuthenticatedChain()
-		wrapped := chain.Then(handler)
-
-		// Test POST without token - should be blocked
+		// Test same-origin POST - should pass
 		req := httptest.NewRequest("POST", "/", nil)
 		w := httptest.NewRecorder()
 
 		wrapped.ServeHTTP(w, req)
 
-		assert.Equal(t, http.StatusForbidden, w.Code, "POST without CSRF token should be blocked")
+		assert.Equal(t, http.StatusOK, w.Code, "Same-origin POST should pass CSRF check")
 
-		// Test POST with valid token - should pass
-		token := generateCSRFToken()
+		// Test cross-origin POST - should be blocked
 		req = httptest.NewRequest("POST", "/", nil)
-		req.AddCookie(&http.Cookie{
-			Name:  "csrf_token",
-			Value: token,
-		})
-		req.Header.Set("X-CSRF-Token", token)
+		req.Header.Set("Origin", "https://evil.com")
 		w = httptest.NewRecorder()
 
 		wrapped.ServeHTTP(w, req)
 
-		// Will get 401 because no auth, but not 403 (CSRF passed)
-		assert.Equal(t, http.StatusUnauthorized, w.Code, "POST with valid CSRF should pass CSRF check")
+		// Should be blocked by CSRF protection
+		assert.Equal(t, http.StatusForbidden, w.Code, "Cross-origin POST should be blocked by CSRF")
+		assert.Contains(t, w.Body.String(), "Cross-origin request rejected")
 	})
 }
 

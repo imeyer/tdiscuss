@@ -123,34 +123,3 @@ func GetUser(r *http.Request) (User, error) {
 	}, nil
 }
 
-// GetCSRFToken is an adapter function that retrieves the CSRF token from the request context
-// This maintains compatibility with the old code while using the new middleware
-func GetCSRFToken(r *http.Request) string {
-	// First try the new middleware way
-	if token := middleware.GetCSRFToken(r.Context()); token != "" {
-		return token
-	}
-
-	// If not in context, try to get from cookie (for cases where middleware set it)
-	if cookie, err := r.Cookie("csrf_token"); err == nil {
-		return cookie.Value
-	}
-
-	// Fall back to the old way for test compatibility
-	return GetCSRFTokenOld(r)
-}
-
-// validateCSRFToken is an adapter function for CSRF token validation
-// This maintains compatibility with the old code
-func validateCSRFToken(r *http.Request) error {
-	// The middleware already validates CSRF tokens for POST/PUT/PATCH/DELETE
-	// This function is now just for compatibility
-	// If we reach here and it's a state-changing method, the middleware already validated
-	if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" || r.Method == "DELETE" {
-		// Token was already validated by middleware
-		return nil
-	}
-
-	// For other methods or tests, use the old implementation
-	return validateCSRFTokenOld(r)
-}

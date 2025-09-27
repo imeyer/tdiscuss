@@ -11,7 +11,6 @@ go_test(
     size = "small",
     srcs = [
         "config_test.go",
-        "csrf_test.go",
         "helpers_test.go",
         "metrics_test.go",
         "parser_test.go",
@@ -72,7 +71,6 @@ go_library(
     name = "tdiscuss_lib",
     srcs = [
         "config.go",
-        "csrf.go",
         "db.go",
         "handlers.go",
         "handlers_placeholder.go",

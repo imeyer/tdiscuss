@@ -35,7 +35,7 @@ type MiddlewareSetup struct {
 }
 
 // NewMiddlewareSetup creates a new middleware setup with defaults
-func newMiddlewareSetup(logger *slog.Logger, telemetry *TelemetryConfig, authProvider AuthProvider) *MiddlewareSetup {
+func NewMiddlewareSetup(logger *slog.Logger, telemetry *TelemetryConfig, authProvider AuthProvider) *MiddlewareSetup {
 	// Type assert the interfaces to the actual OpenTelemetry types
 	tracer, _ := telemetry.Tracer.(trace.Tracer)
 	meter, _ := telemetry.Meter.(metric.Meter)
@@ -87,10 +87,7 @@ func (ms *MiddlewareSetup) CreatePublicChain() *Chain {
 		middlewares = append(middlewares, rl.Middleware())
 	}
 
-	// Add CSRF token generation for all endpoints (even public ones need tokens for forms)
-	if ms.EnableCSRF {
-		middlewares = append(middlewares, csrfTokenMiddleware(ms.SecurityConfig))
-	}
+	// CSRF protection is now handled by CrossOriginProtection middleware in authenticated chains
 
 	return newChain(middlewares...)
 }

@@ -24,6 +24,12 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	telemetryConfig := ConvertTelemetryConfig(dsvc.telemetry)
 	ms := middleware.NewMiddlewareSetup(dsvc.logger, telemetryConfig, authProvider)
 
+	// Configure CSRF protection for your specific needs
+	// Add any trusted origins here if you have specific external sites that need access
+	// ms.SecurityConfig.CSRFTrustedOrigins = []string{"https://trusted-client.example.com"}
+	// Add bypass patterns for specific endpoints if needed
+	// ms.SecurityConfig.CSRFBypassPatterns = []string{"/api/webhooks/*"}
+
 	// Configure rate limiting
 	// We need to use the actual metric.Meter from the original config
 	ms.RateLimitConfig.Meter = dsvc.telemetry.Meter

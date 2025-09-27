@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -22,11 +21,10 @@ type SecurityConfig struct {
 	HSTSIncludeSubDomains bool
 	HSTSPreload           bool
 
-	// CSRF configuration
-	CSRFCookieName string
-	CSRFHeaderName string
-	CSRFFieldName  string
-	CSRFSameSite   http.SameSite
+	// CSRF protection (using Go 1.25 built-in)
+	CSRFProtection     *http.CrossOriginProtection
+	CSRFTrustedOrigins []string
+	CSRFBypassPatterns []string
 
 	// Feature policy
 	PermissionsPolicy map[string][]string
@@ -58,12 +56,11 @@ func defaultSecurityConfig() *SecurityConfig {
 		GenerateNonce:         false,
 		HSTSMaxAge:            63072000, // 2 years
 		HSTSIncludeSubDomains: true,
-		HSTSPreload:           true,
-		CSRFCookieName:        "csrf_token",
-		CSRFHeaderName:        "X-CSRF-Token",
-		CSRFFieldName:         "csrf_token",
-		CSRFSameSite:          http.SameSiteLaxMode,
-		FrameOptions:          "DENY",
+		HSTSPreload:        true,
+		CSRFProtection:     http.NewCrossOriginProtection(),
+		CSRFTrustedOrigins: []string{},
+		CSRFBypassPatterns: []string{},
+		FrameOptions:       "DENY",
 		ContentTypeOptions:    "nosniff",
 		ReferrerPolicy:        "strict-origin-when-cross-origin",
 		PermissionsPolicy: map[string][]string{
@@ -131,44 +128,36 @@ func securityHeadersMiddleware(config *SecurityConfig) Middleware {
 	}
 }
 
-// csrfProtectionMiddleware provides CSRF protection
+// csrfProtectionMiddleware provides CSRF protection using Go 1.25's built-in CrossOriginProtection
 func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
 	if config == nil {
 		config = defaultSecurityConfig()
 	}
 
-	// Methods that require CSRF protection
-	protectedMethods := map[string]bool{
-		"POST":   true,
-		"PUT":    true,
-		"PATCH":  true,
-		"DELETE": true,
+	// Configure the built-in CSRF protection
+	protection := config.CSRFProtection
+	if protection == nil {
+		protection = http.NewCrossOriginProtection()
+	}
+
+	// Add trusted origins
+	for _, origin := range config.CSRFTrustedOrigins {
+		if err := protection.AddTrustedOrigin(origin); err != nil {
+			// Log error but continue (invalid origins are ignored)
+			continue
+		}
+	}
+
+	// Add bypass patterns
+	for _, pattern := range config.CSRFBypassPatterns {
+		protection.AddInsecureBypassPattern(pattern)
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip CSRF check for safe methods
-			if !protectedMethods[r.Method] {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Get token from cookie
-			cookie, err := r.Cookie(config.CSRFCookieName)
-			if err != nil {
-				http.Error(w, "CSRF token missing", http.StatusForbidden)
-				return
-			}
-
-			// Get token from request (header or form)
-			requestToken := r.Header.Get(config.CSRFHeaderName)
-			if requestToken == "" {
-				requestToken = r.FormValue(config.CSRFFieldName)
-			}
-
-			// Compare tokens
-			if !validateCSRFToken(cookie.Value, requestToken) {
-				http.Error(w, "CSRF token invalid", http.StatusForbidden)
+			// Use Go 1.25's built-in CSRF protection
+			if err := protection.Check(r); err != nil {
+				http.Error(w, "Cross-origin request rejected", http.StatusForbidden)
 				return
 			}
 
@@ -177,42 +166,6 @@ func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
 	}
 }
 
-// csrfTokenMiddleware generates and sets CSRF tokens
-func csrfTokenMiddleware(config *SecurityConfig) Middleware {
-	if config == nil {
-		config = defaultSecurityConfig()
-	}
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check if token already exists
-			var token string
-			if cookie, err := r.Cookie(config.CSRFCookieName); err == nil {
-				token = cookie.Value
-			} else {
-				// Generate new token
-				token = generateCSRFToken()
-
-				// Set cookie
-				http.SetCookie(w, &http.Cookie{
-					Name:     config.CSRFCookieName,
-					Value:    token,
-					Path:     "/",
-					HttpOnly: true,
-					Secure:   isHTTPS(r),
-					SameSite: config.CSRFSameSite,
-					MaxAge:   86400, // 24 hours
-				})
-			}
-
-			// Make token available in context
-			rc := getOrCreateRequestContext(r.Context())
-			rc.Set("csrf_token", token)
-
-			next.ServeHTTP(w, r)
-		})
-	}
-}
 
 // requestSizeLimitMiddleware limits request body size
 func requestSizeLimitMiddleware(maxSize int64) Middleware {
@@ -314,31 +267,6 @@ func generateNonce() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-func generateCSRFToken() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("failed to generate CSRF token")
-	}
-	return base64.URLEncoding.EncodeToString(b)
-}
-
-func validateCSRFToken(cookieToken, requestToken string) bool {
-	// Both must be present
-	if cookieToken == "" || requestToken == "" {
-		return false
-	}
-
-	// Decode tokens
-	cookieBytes, err1 := base64.URLEncoding.DecodeString(cookieToken)
-	requestBytes, err2 := base64.URLEncoding.DecodeString(requestToken)
-
-	if err1 != nil || err2 != nil {
-		return false
-	}
-
-	// Use constant-time comparison
-	return subtle.ConstantTimeCompare(cookieBytes, requestBytes) == 1
-}
 
 // getCSPNonce retrieves the CSP nonce from request context
 func getCSPNonce(ctx context.Context) string {
@@ -349,17 +277,3 @@ func getCSPNonce(ctx context.Context) string {
 	return rc.CSPNonce
 }
 
-// getCSRFToken retrieves the CSRF token from request context
-func getCSRFToken(ctx context.Context) string {
-	rc, ok := getRequestContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	if token, ok := rc.Get("csrf_token"); ok {
-		if strToken, ok := token.(string); ok {
-			return strToken
-		}
-	}
-	return ""
-}
