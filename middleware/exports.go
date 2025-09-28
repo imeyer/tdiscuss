@@ -36,8 +36,6 @@ var (
 	// GetCSPNonce retrieves the CSP nonce from context
 	GetCSPNonce = getCSPNonce
 
-	// GetCSRFToken retrieves the CSRF token from context
-	GetCSRFToken = getCSRFToken
 )
 
 // Conditional middleware helpers
@@ -69,8 +67,6 @@ var (
 	// SecurityHeadersMiddleware adds security headers
 	SecurityHeadersMiddleware = securityHeadersMiddleware
 
-	// CSRFTokenMiddleware generates and sets CSRF tokens
-	CSRFTokenMiddleware = csrfTokenMiddleware
 
 	// CSRFProtectionMiddleware validates CSRF tokens
 	CSRFProtectionMiddleware = csrfProtectionMiddleware
@@ -145,7 +141,5 @@ func RequireAdminMiddleware() Middleware {
 	return requireAdminMiddleware()
 }
 
-// NewMiddlewareSetup creates a new middleware setup
-func NewMiddlewareSetup(logger *slog.Logger, telemetry *TelemetryConfig, authProvider AuthProvider) *MiddlewareSetup {
-	return newMiddlewareSetup(logger, telemetry, authProvider)
-}
+// NewMiddlewareSetup creates a new middleware setup - delegated to middleware_setup.go
+// This function is defined in middleware_setup.go

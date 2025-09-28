@@ -5,7 +5,6 @@
 
 <div class="form-container">
     <form action="/thread/{{ .Thread.ThreadID }}/edit" method="POST">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="thread_post_id" value="{{ .Thread.ThreadPostID }}">
         <div class="form-group">
             <label for="subject">subject</label>

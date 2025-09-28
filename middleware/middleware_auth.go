@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"log/slog"
@@ -245,7 +247,11 @@ func (s *SessionMiddleware) Middleware() Middleware {
 }
 
 func generateSessionID() string {
-	return generateCSRFToken() // Reuse the secure random generation
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("failed to generate session ID")
+	}
+	return base64.URLEncoding.EncodeToString(b)
 }
 
 // userEnrichmentMiddleware adds user information to all handlers

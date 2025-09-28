@@ -7,7 +7,6 @@
 
 <div class="form-container">
     <form action="/member/edit" method="POST">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <div class="form-group">
             <label for="photo_url">Photo URL</label>
             <input type="url" id="photo_url" size="72px" name="photo_url" value="{{ .Member.PhotoUrl.String }}">

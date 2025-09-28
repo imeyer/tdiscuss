@@ -116,7 +116,6 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
 		"CurrentUserEmail": user.Email,
-		"CSRFToken":        GetCSRFToken(r),
 		"User":             user,
 	})
 }
@@ -436,7 +435,6 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	if r.Method == http.MethodGet {
 		// Render the edit profile form
@@ -446,8 +444,7 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 			"CurrentUserEmail": user.Email,
 			"Version":          s.version,
 			"GitSha":           s.gitSha,
-			"CSRFToken":        csrfToken,
-			"User":             user,
+						"User":             user,
 		})
 		return
 	}
@@ -630,7 +627,6 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	// Parse thread ID from path
 	threadIDStr := r.PathValue("tid")
@@ -664,8 +660,7 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-		"CSRFToken":        csrfToken,
-		"Thread":           t,
+				"Thread":           t,
 	})
 }
 
@@ -763,7 +758,6 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	// Parse thread post ID from path
 	postIDStr := r.PathValue("pid")
@@ -797,8 +791,7 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-		"CSRFToken":        csrfToken,
-		"ThreadPost":       t,
+				"ThreadPost":       t,
 	})
 }
 
@@ -853,7 +846,6 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	span.AddEvent("queries.ListThreads")
 	threads, err := s.queries.ListThreads(r.Context(), ListThreadsParams{
@@ -892,8 +884,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
 		"CurrentUserEmail": user.Email,
-		"CSRFToken":        csrfToken,
-		"User":             user,
+				"User":             user,
 	})
 }
 
@@ -926,7 +917,6 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	span.AddEvent("queries.GetThreadSubject")
 	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
@@ -975,8 +965,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"ID":        threadID,
 		"GitSha":    s.gitSha,
 		"Version":   s.version,
-		"CSRFToken": csrfToken,
-		"User":      user,
+				"User":      user,
 	})
 }
 
@@ -1025,7 +1014,6 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 	// Check if the current user can edit this profile
 	canEdit := user.ID == memberID || user.IsAdmin
 
-	csrfToken := GetCSRFToken(r)
 
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
@@ -1035,8 +1023,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-		"CSRFToken":        csrfToken,
-		"User":             user,
+				"User":             user,
 		"TotalPosts":       len(threads),
 	})
 }
@@ -1055,15 +1042,13 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	csrfToken := GetCSRFToken(r)
 
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-		"CSRFToken":        csrfToken,
-		"User":             user,
+				"User":             user,
 	})
 }
 
