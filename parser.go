@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"regexp"
 	"strconv"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/yuin/goldmark"
 	emoji "github.com/yuin/goldmark-emoji"
 	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/renderer/html"
+	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
 func parseMarkdownToHTML(text string) string {
@@ -22,7 +23,7 @@ func parseMarkdownToHTML(text string) string {
 			extension.GFM,
 		),
 		goldmark.WithRendererOptions(
-			html.WithUnsafe(), // Allow raw HTML if needed
+			gmhtml.WithUnsafe(),
 		),
 	)
 
@@ -36,7 +37,9 @@ func parseMarkdownToHTML(text string) string {
 func parseHTMLStrict(text string) string {
 	strict := bluemonday.StrictPolicy()
 
-	return strict.Sanitize(text)
+	// Sanitize to strip all HTML tags, then unescape entities to get plain text.
+	// The template engine will re-escape on output.
+	return html.UnescapeString(strict.Sanitize(text))
 }
 
 func parseHTMLLessStrict(text string) string {

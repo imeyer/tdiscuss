@@ -19,6 +19,7 @@ def cross_compile_binary(name, goos, goarch):
         embed = [":{}_lib".format(name)],
         goarch = goarch,  # Use Go's architecture naming for the compiler
         goos = goos,      # Use Go's OS naming for the compiler
+        pure = "on",      # Disable cgo for pure Go builds
         # This ensures the target is only built when compatible
         target_compatible_with = [
             constraint_os,
