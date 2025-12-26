@@ -13,13 +13,14 @@ go_test(
         "config_test.go",
         "helpers_test.go",
         "metrics_test.go",
+        "mocks_test.go",
         "parser_test.go",
         "privacy_test.go",
         "ratelimit_test.go",
-        "server_test.go",
         "validation_test.go",
     ],
     embed = [":tdiscuss_lib"],
+    pure = "on",
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],
@@ -47,6 +48,7 @@ test_suite(
 go_binary(
     name = "tdiscuss",
     embed = [":tdiscuss_lib"],
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 
