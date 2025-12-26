@@ -1,5 +1,5 @@
 try-import .buildbuddy.bazelrc
-test --test_output=errors
+test --test_output=all --test_arg=-test.v
 test:silent --ui_event_filters=+info,+error,+fail
 common:silent --noshow_progress
 common:silent --ui_event_filters=-info,+error,+fail
