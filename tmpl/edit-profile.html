@@ -3,7 +3,7 @@
 {{ template "menu" . }}
 
 {{ if .Member }}
-<h3>Editing profile for {{ .User.Email }}</h3>
+<h3 class="page-title">Editing profile for {{ .User.Email }}</h3>
 
 <div class="form-container">
     <form action="/member/edit" method="POST">
