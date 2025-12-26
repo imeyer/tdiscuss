@@ -87,7 +87,7 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 			email, err := provider.GetUserEmail(r)
 			if err != nil {
 				logger := getLogger(ctx)
-				logger.ErrorContext(ctx, "failed to get user email",
+				logger.WarnContext(ctx, "authentication failed",
 					slog.String("error", err.Error()),
 					slog.String("remote_addr", r.RemoteAddr),
 				)
