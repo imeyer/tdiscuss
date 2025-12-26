@@ -194,7 +194,7 @@ func ValidateThreadForm(subject, body string) ValidationErrors {
 	// Validate body
 	if v.ValidateRequired("body", body) {
 		v.ValidateMaxLength("body", body, MaxBodyLength)
-		v.ValidateMinLength("body", body, 10)
+		v.ValidateMinLength("body", body, 1)
 	}
 
 	return v.Errors()

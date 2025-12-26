@@ -118,12 +118,6 @@ func TestValidateThreadForm(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name:      "short body",
-			subject:   "Test Subject",
-			body:      "Too short",
-			wantError: true,
-		},
-		{
 			name:      "subject too long",
 			subject:   strings.Repeat("a", 256),
 			body:      "This is a test body",
