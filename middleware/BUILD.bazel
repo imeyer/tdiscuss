@@ -35,8 +35,10 @@ go_test(
         "middleware_test.go",
     ],
     embed = [":middleware"],
+    pure = "on",
     deps = [
         "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
         "@io_opentelemetry_go_otel_metric//noop",
         "@io_opentelemetry_go_otel_trace//noop",
     ],
