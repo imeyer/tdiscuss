@@ -207,14 +207,14 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 
 		// Update edit window
 		if editWindowStr != "" {
-			editWindow, err := strconv.Atoi(editWindowStr)
+			editWindow, err := strconv.ParseInt(editWindowStr, 10, 32)
 			if err != nil {
-				s.logger.ErrorContext(r.Context(), "invalid edit window value", 
+				s.logger.ErrorContext(r.Context(), "invalid edit window value",
 					slog.String("error", err.Error()))
 				s.renderError(w, http.StatusBadRequest)
 				return
 			}
-			
+
 			if err := s.queries.UpdateBoardEditWindow(r.Context(), pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to update edit window", 
 					slog.String("error", err.Error()))
