@@ -38,7 +38,7 @@ type ThreadPostTemplateData struct {
 
 type ThreadTemplateData struct {
 	ThreadID       int64
-	Subject        template.HTML
+	Subject        string
 	Email          pgtype.Text
 	Lastid         pgtype.Int8
 	Lastname       pgtype.Text
@@ -586,7 +586,10 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 
 	s.logger.DebugContext(r.Context(), "editThreadPOST", slog.Int64("threadID", threadID), slog.Int64("threadPostID", threadPostID))
 
-	if t.Subject != subject {
+	subjectChanged := t.Subject != subject
+	bodyChanged := t.Body.String != body
+
+	if subjectChanged {
 		err = s.queries.UpdateThread(r.Context(), UpdateThreadParams{
 			Subject:  subject,
 			ID:       threadID,
@@ -599,7 +602,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if t.Body.String != body {
+	if bodyChanged {
 		err = s.queries.UpdateThreadPost(r.Context(), UpdateThreadPostParams{
 			Body: pgtype.Text{
 				Valid:  true,
@@ -613,6 +616,15 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
+	}
+
+	if subjectChanged || bodyChanged {
+		s.logger.InfoContext(r.Context(), "thread edited",
+			slog.Int64("thread_id", threadID),
+			slog.Int64("user_id", user.ID),
+			slog.Bool("subject_changed", subjectChanged),
+			slog.Bool("body_changed", bodyChanged),
+		)
 	}
 
 	// nosemgrep
@@ -730,6 +742,13 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if tp.Body.String == body {
+		// No changes made, just redirect
+		threadIDStr := r.PathValue("tid")
+		http.Redirect(w, r, fmt.Sprintf("/thread/%s", threadIDStr), http.StatusSeeOther)
+		return
+	}
+
 	err = s.queries.UpdateThreadPost(r.Context(), UpdateThreadPostParams{
 		Body: pgtype.Text{
 			Valid:  true,
@@ -744,8 +763,15 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get thread ID from path for redirect
 	threadIDStr := r.PathValue("tid")
+	threadID, _ := strconv.ParseInt(threadIDStr, 10, 64)
+
+	s.logger.InfoContext(r.Context(), "post edited",
+		slog.Int64("thread_id", threadID),
+		slog.Int64("post_id", tp.ID),
+		slog.Int64("user_id", user.ID),
+	)
+
 	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%s", threadIDStr), http.StatusSeeOther)
 }
@@ -758,6 +784,14 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Parse thread ID from path
+	threadIDStr := r.PathValue("tid")
+	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusBadRequest)
+		return
+	}
 
 	// Parse thread post ID from path
 	postIDStr := r.PathValue("pid")
@@ -791,7 +825,8 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-				"ThreadPost":       t,
+		"Post":             t,
+		"ThreadID":         threadID,
 	})
 }
 
@@ -861,10 +896,10 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	span.AddEvent("map threads to template data")
 	var threadData []ThreadTemplateData
 	for _, thread := range threads {
-		// Subject is already sanitized HTML from the database, no need to parse again
+		// Subject is plain text (sanitized on input), template engine escapes on output
 		threadData = append(threadData, ThreadTemplateData{
 			ThreadID:       thread.ThreadID,
-			Subject:        template.HTML(thread.Subject),
+			Subject:        thread.Subject,
 			Email:          thread.Email,
 			Lastid:         thread.Lastid,
 			Lastname:       thread.Lastname,
@@ -930,8 +965,6 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	subject = parseMarkdownToHTML(parseHTMLStrict(subject))
-
 	posts, err := s.queries.ListThreadPosts(r.Context(), ListThreadPostsParams{
 		Email:    user.Email,
 		ThreadID: threadID,
@@ -960,9 +993,8 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"Title":            GetBoardTitle(r),
 		"CurrentUserEmail": user.Email,
 		"ThreadPosts":      threadPosts,
-		// nosemgrep
-		"Subject":   template.HTML(subject),
-		"ID":        threadID,
+		"Subject":          subject,
+		"ID":               threadID,
 		"GitSha":    s.gitSha,
 		"Version":   s.version,
 				"User":      user,

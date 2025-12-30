@@ -4,9 +4,6 @@ import (
 	"net/http"
 )
 
-// Placeholder handlers for routes that don't exist yet
-// TODO: Remove these once actual handlers are implemented
-
 // ServeStatic serves static files
 func (s *DiscussService) ServeStatic(w http.ResponseWriter, r *http.Request) {
 	// TODO: Implement static file serving
