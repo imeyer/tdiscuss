@@ -151,7 +151,7 @@ func NewDiscussService(
 func NewTsNetServer() *tsnet.Server {
 	return &tsnet.Server{
 		Dir:      filepath.Join(*dataDir, "tailscale"),
-		Hostname: "discuss-dev",
+		Hostname: *hostname,
 		Logf:     tsnetlog.Discard,
 	}
 }

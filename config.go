@@ -15,6 +15,7 @@ type Config struct {
 	Logger            *slog.Logger
 	ServiceName       string
 	ServiceVersion    string
+	ServiceGitSha     string
 	TraceMaxBatchSize int
 	TraceSampleRate   float64
 	OTLP              bool

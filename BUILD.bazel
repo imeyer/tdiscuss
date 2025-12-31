@@ -50,6 +50,10 @@ go_binary(
     embed = [":tdiscuss_lib"],
     pure = "on",
     visibility = ["//visibility:public"],
+    x_defs = {
+        "github.com/imeyer/tdiscuss.version": "{STABLE_VERSION}",
+        "github.com/imeyer/tdiscuss.gitSha": "{STABLE_GIT_SHA}",
+    },
 )
 
 create_cross_platform_targets(

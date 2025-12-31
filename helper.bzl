@@ -26,4 +26,8 @@ def cross_compile_binary(name, goos, goarch):
             constraint_arch,
         ],
         visibility = ["//visibility:public"],
+        x_defs = {
+            "github.com/imeyer/tdiscuss.version": "{STABLE_VERSION}",
+            "github.com/imeyer/tdiscuss.gitSha": "{STABLE_GIT_SHA}",
+        },
     )

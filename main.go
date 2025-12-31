@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,11 +25,12 @@ var templateFiles embed.FS
 var staticFiles embed.FS
 
 var (
-	hostname            = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss"), "Hostname to use on your tailnet")
+	hostname            = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss-dev"), "Hostname to use on your tailnet")
 	dataDir             = flag.String("data-location", dataLocation(), "Configuration data location.")
 	debug               = flag.Bool("debug", false, "Enable debug logging")
-	tsnetLog            = flag.Bool("tsnet-log", false, "Enable tsnet logging")
+	tsnetLog            = flag.Bool("tsnet-log", false, "Enable tsnet logging (warning: VERY verbose)")
 	otlpMode            = flag.Bool("otlp", false, "Enable OTLP metrics output, IYKYK")
+	showVersion         = flag.Bool("version", false, "Print version and exit")
 	version  string     = "dev"
 	gitSha   string     = "no-commit"
 	logLevel slog.Level = slog.LevelInfo
@@ -36,6 +38,11 @@ var (
 
 func main() {
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("tdiscuss %s (%s)\n", version, gitSha)
+		os.Exit(0)
+	}
 
 	hostinfo.SetApp("tdiscuss")
 
@@ -52,7 +59,8 @@ func main() {
 	}
 	config.Logger = logger
 	config.OTLP = *otlpMode
-	config.ServiceVersion = version // Set version BEFORE setupTelemetry
+	config.ServiceVersion = version
+	config.ServiceGitSha = gitSha
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

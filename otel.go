@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.opentelemetry.io/contrib/processors/minsev"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -57,7 +58,8 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 	// Log the version being set
 	config.Logger.Info("Setting up OTEL resource",
 		slog.String("service_name", config.ServiceName),
-		slog.String("service_version", config.ServiceVersion))
+		slog.String("service_version", config.ServiceVersion),
+		slog.String("service_git_sha", config.ServiceGitSha))
 
 	res, err := resource.New(ctx,
 		resource.WithHost(),
@@ -67,6 +69,7 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 			semconv.ServiceNamespace("tdiscuss"),
 			semconv.ServiceName(config.ServiceName),
 			semconv.ServiceVersion(config.ServiceVersion),
+			attribute.String("service.git_sha", config.ServiceGitSha),
 		),
 	)
 	if err != nil {
