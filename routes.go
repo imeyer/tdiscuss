@@ -24,12 +24,6 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	telemetryConfig := ConvertTelemetryConfig(dsvc.telemetry)
 	ms := middleware.NewMiddlewareSetup(dsvc.logger, telemetryConfig, authProvider)
 
-	// Configure CSRF protection for your specific needs
-	// Add any trusted origins here if you have specific external sites that need access
-	// ms.SecurityConfig.CSRFTrustedOrigins = []string{"https://trusted-client.example.com"}
-	// Add bypass patterns for specific endpoints if needed
-	// ms.SecurityConfig.CSRFBypassPatterns = []string{"/api/webhooks/*"}
-
 	// Configure rate limiting
 	// We need to use the actual metric.Meter from the original config
 	ms.RateLimitConfig.Meter = dsvc.telemetry.Meter
@@ -268,8 +262,6 @@ func isSensitiveField(fieldName string) bool {
 		"csrf_token":  true,
 		"api_key":     true,
 		"private_key": true,
-		"credit_card": true,
-		"ssn":         true,
 	}
 
 	fieldLower := strings.ToLower(fieldName)
@@ -287,18 +279,15 @@ func generateErrorHTML(errorID string) string {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Internal Server Error</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                margin: 0; padding: 40px; background: #f5f5f5; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; background: white; 
+        .container { max-width: 600px; margin: 0 auto; background: white;
                     padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
         .error-icon { font-size: 48px; color: #e74c3c; margin-bottom: 20px; }
         h1 { color: #e74c3c; margin: 0 0 20px 0; }
-        .error-id { background: #f8f9fa; padding: 10px; border-radius: 4px; 
-                   font-family: monospace; font-size: 14px; margin: 20px 0; 
-                   border-left: 4px solid #e74c3c; }
         .actions { margin-top: 30px; }
-        .btn { display: inline-block; padding: 12px 24px; background: #3498db; 
-               color: white; text-decoration: none; border-radius: 4px; 
+        .btn { display: inline-block; padding: 12px 24px; background: #3498db;
+               color: white; text-decoration: none; border-radius: 4px;
                margin-right: 10px; }
         .btn:hover { background: #2980b9; }
     </style>
@@ -307,13 +296,8 @@ func generateErrorHTML(errorID string) string {
     <div class="container">
         <div class="error-icon">⚠️</div>
         <h1>Internal Server Error</h1>
-        <p>We're sorry, but something went wrong on our server. Our team has been notified and will investigate the issue.</p>
-        
-        <div class="error-id">
-            <strong>Error ID:</strong> %s<br>
-            <small>Please include this ID when contacting support.</small>
-        </div>
-        
+        <p>We're sorry, but something went wrong on our server.</p>
+        <p style="color: #666; font-size: 12px;">Error ID: %s</p>
         <div class="actions">
             <a href="/" class="btn">Return to Home</a>
             <a href="javascript:history.back()" class="btn" style="background: #95a5a6;">Go Back</a>

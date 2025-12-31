@@ -41,18 +41,6 @@ func TestPoolConfig(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("BeforeAcquire Callback", func(t *testing.T) {
-		require.NotNil(t, config.BeforeAcquire)
-		result := config.BeforeAcquire(context.Background(), &pgx.Conn{})
-		assert.True(t, result)
-	})
-
-	t.Run("AfterRelease Callback", func(t *testing.T) {
-		require.NotNil(t, config.AfterRelease)
-		result := config.AfterRelease(&pgx.Conn{})
-		assert.True(t, result)
-	})
-
 	t.Run("BeforeClose Callback", func(t *testing.T) {
 		require.NotNil(t, config.BeforeClose)
 		config.BeforeClose(&pgx.Conn{})

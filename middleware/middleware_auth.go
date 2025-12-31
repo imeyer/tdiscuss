@@ -2,10 +2,6 @@ package middleware
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -107,7 +103,7 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				logger := getLogger(ctx)
 				logger.ErrorContext(ctx, "failed to create or get user",
 					slog.String("error", err.Error()),
-					slog.String("email_hash", hashEmail(email)),
+					slog.String("email_hash", HashEmail(email)),
 				)
 
 				if span := trace.SpanFromContext(ctx); span.IsRecording() {
@@ -124,7 +120,7 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				logger := getLogger(ctx)
 				logger.WarnContext(ctx, "blocked user attempted access",
 					slog.Int64("user_id", user.ID),
-					slog.String("email_hash", hashEmail(email)),
+					slog.String("email_hash", HashEmail(email)),
 				)
 
 				if span := trace.SpanFromContext(ctx); span.IsRecording() {
@@ -197,63 +193,6 @@ func requireAdminMiddleware() Middleware {
 	}
 }
 
-// SessionMiddleware provides session management
-type SessionMiddleware struct {
-	cookieName string
-	secure     bool
-	sameSite   http.SameSite
-}
-
-// newSessionMiddleware creates a new session middleware
-func newSessionMiddleware(cookieName string, secure bool) *SessionMiddleware {
-	return &SessionMiddleware{
-		cookieName: cookieName,
-		secure:     secure,
-		sameSite:   http.SameSiteLaxMode,
-	}
-}
-
-// Middleware returns the session middleware function
-func (s *SessionMiddleware) Middleware() Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get or create session ID
-			var sessionID string
-			if cookie, err := r.Cookie(s.cookieName); err == nil {
-				sessionID = cookie.Value
-			} else {
-				// Generate new session ID
-				sessionID = generateSessionID()
-
-				// Set cookie
-				http.SetCookie(w, &http.Cookie{
-					Name:     s.cookieName,
-					Value:    sessionID,
-					Path:     "/",
-					HttpOnly: true,
-					Secure:   s.secure || isHTTPS(r),
-					SameSite: s.sameSite,
-					MaxAge:   86400 * 30, // 30 days
-				})
-			}
-
-			// Add session ID to context
-			rc := getOrCreateRequestContext(r.Context())
-			rc.Set("session_id", sessionID)
-
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func generateSessionID() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("failed to generate session ID")
-	}
-	return base64.URLEncoding.EncodeToString(b)
-}
-
 // userEnrichmentMiddleware adds user information to all handlers
 // This should run after authMiddleware
 func userEnrichmentMiddleware() Middleware {
@@ -290,11 +229,3 @@ func isDebugMode() bool {
 	return false
 }
 
-// hashEmail creates a hash of an email for privacy-preserving logging
-func hashEmail(email string) string {
-	if email == "" {
-		return "empty"
-	}
-	h := sha256.Sum256([]byte(email))
-	return hex.EncodeToString(h[:8]) // First 8 bytes for brevity
-}

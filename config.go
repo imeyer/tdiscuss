@@ -64,16 +64,6 @@ func PoolConfig(dsn *string, logger *slog.Logger) (*pgxpool.Config, error) {
 		return nil
 	}
 
-	dbConfig.BeforeAcquire = func(ctx context.Context, c *pgx.Conn) bool {
-		logger.Debug("acquiring connection pool")
-		return true
-	}
-
-	dbConfig.AfterRelease = func(c *pgx.Conn) bool {
-		logger.Debug("releasing connection pool")
-		return true
-	}
-
 	dbConfig.BeforeClose = func(c *pgx.Conn) {
 		logger.Debug("closing connection pool")
 	}

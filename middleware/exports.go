@@ -3,6 +3,8 @@
 package middleware
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
@@ -108,8 +110,15 @@ var (
 	DefaultRateLimitConfig = defaultRateLimitConfig
 )
 
-// Helper functions for common tasks
-// HashEmail is defined in the parent package and should be imported from there
+// HashEmail creates a consistent hash of an email for privacy-preserving logging.
+// Returns the first 8 bytes of the SHA256 hash as a hex string.
+func HashEmail(email string) string {
+	if email == "" {
+		return ""
+	}
+	h := sha256.Sum256([]byte(email))
+	return hex.EncodeToString(h[:8])
+}
 
 // NewTailscaleAuthProvider creates a new Tailscale auth provider
 func NewTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *slog.Logger) AuthProvider {

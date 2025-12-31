@@ -258,7 +258,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	span.AddEvent("GetUser(r)")
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.DebugContext(r.Context(), "CreateThread", slog.String("user_hash", hashEmail(user.Email)), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
+		s.logger.DebugContext(r.Context(), "CreateThread", slog.String("user_hash", middleware.HashEmail(user.Email)), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
@@ -351,7 +351,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user_hash", hashEmail(user.Email)), slog.Int64("user_id", user.ID))
+		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user_hash", middleware.HashEmail(user.Email)), slog.Int64("user_id", user.ID))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}

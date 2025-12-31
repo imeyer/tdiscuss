@@ -553,3 +553,36 @@ func BenchmarkRequestSizeLimitMiddleware(b *testing.B) {
 		middleware.ServeHTTP(rec, req)
 	}
 }
+
+func TestHashEmail(t *testing.T) {
+	tests := []struct {
+		name  string
+		email string
+	}{
+		{name: "normal email", email: "user@example.com"},
+		{name: "empty email", email: ""},
+		{name: "different email", email: "other@example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := HashEmail(tt.email)
+
+			if tt.email == "" {
+				assert.Equal(t, "", result)
+			} else {
+				// Hash should be 16 characters long (8 bytes as hex)
+				assert.Equal(t, 16, len(result))
+
+				// Same email should produce same hash
+				result2 := HashEmail(tt.email)
+				assert.Equal(t, result, result2)
+			}
+		})
+	}
+
+	// Different emails should produce different hashes
+	hash1 := HashEmail("user1@example.com")
+	hash2 := HashEmail("user2@example.com")
+	assert.NotEqual(t, hash1, hash2)
+}

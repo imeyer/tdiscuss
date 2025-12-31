@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/imeyer/tdiscuss/middleware"
-	"tailscale.com/client/tailscale/apitype"
 )
 
 // TailscaleClientAdapter adapts the actual Tailscale client to the middleware interface
@@ -70,23 +69,6 @@ func (a *QuerierAdapter) GetBoardData(ctx context.Context) (interface{}, error) 
 	}
 	// Return the board data as a value, not a pointer
 	return boardData, nil
-}
-
-// Helper function to convert apitype.WhoIsResponse to middleware.WhoIsResponse
-func convertWhoIsResponse(resp *apitype.WhoIsResponse) *middleware.WhoIsResponse {
-	if resp == nil {
-		return nil
-	}
-
-	result := &middleware.WhoIsResponse{}
-
-	if resp.UserProfile != nil {
-		result.UserProfile = &middleware.UserProfile{
-			LoginName: resp.UserProfile.LoginName,
-		}
-	}
-
-	return result
 }
 
 // ConvertTelemetryConfig converts the main TelemetryConfig to middleware.TelemetryConfig

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/imeyer/tdiscuss/middleware"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"go.opentelemetry.io/otel/attribute"
@@ -170,7 +171,7 @@ func (t *TracedQueriesWrapper) GetMember(ctx context.Context, id int64) (GetMemb
 
 	span.SetAttributes(
 		attribute.Int64("member.id", id),
-		attribute.String("member.email_hash", hashEmail(row.Email)),
+		attribute.String("member.email_hash", middleware.HashEmail(row.Email)),
 		attribute.Float64("request.duration", duration),
 	)
 
@@ -196,7 +197,7 @@ func (t *TracedQueriesWrapper) GetMemberId(ctx context.Context, email string) (i
 	}
 
 	span.SetAttributes(
-		attribute.String("member.email_hash", hashEmail(email)),
+		attribute.String("member.email_hash", middleware.HashEmail(email)),
 		attribute.Int64("member.id", id),
 		attribute.Float64("request.duration", duration),
 	)
@@ -383,7 +384,7 @@ func (t *TracedQueriesWrapper) ListThreadPosts(ctx context.Context, arg ListThre
 
 	span.SetAttributes(
 		attribute.Int64("thread.id", arg.ThreadID),
-		attribute.String("user.email_hash", hashEmail(arg.Email)),
+		attribute.String("user.email_hash", middleware.HashEmail(arg.Email)),
 		attribute.Int("result.count", len(rows)),
 		attribute.Float64("request.duration", duration),
 	)
@@ -410,7 +411,7 @@ func (t *TracedQueriesWrapper) ListThreads(ctx context.Context, arg ListThreadsP
 	}
 
 	span.SetAttributes(
-		attribute.String("user.email_hash", hashEmail(arg.Email)),
+		attribute.String("user.email_hash", middleware.HashEmail(arg.Email)),
 		attribute.Int64("member.id", arg.MemberID),
 		attribute.Int("result.count", len(rows)),
 		attribute.Float64("request.duration", duration),
