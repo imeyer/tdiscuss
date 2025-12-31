@@ -110,6 +110,11 @@ func main() {
 
 	lc := getTailscaleLocalClient(s, logger)
 
+	if err := checkTailscaleReady(ctx, lc, logger); err != nil {
+		logger.Error("tailscale not ready", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	queries := New(dbconn)
 	wrappedQueries := &QueriesWrapper{Queries: queries}
 

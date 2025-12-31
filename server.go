@@ -148,11 +148,17 @@ func NewDiscussService(
 	}
 }
 
-func NewTsNetServer() *tsnet.Server {
+func NewTsNetServer(logger *slog.Logger) *tsnet.Server {
+	logf := tsnetlog.Discard
+	if *tsnetLog {
+		logf = func(format string, args ...any) {
+			logger.Info(fmt.Sprintf(format, args...), slog.String("source", "tsnet"))
+		}
+	}
 	return &tsnet.Server{
 		Dir:      filepath.Join(*dataDir, "tailscale"),
 		Hostname: *hostname,
-		Logf:     tsnetlog.Discard,
+		Logf:     logf,
 	}
 }
 
@@ -168,7 +174,7 @@ func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
 		os.Exit(1)
 	}
 
-	s := NewTsNetServer()
+	s := NewTsNetServer(logger)
 
 	// TODO: enable once we move to tsnet
 	// // Set up HTTP health check
