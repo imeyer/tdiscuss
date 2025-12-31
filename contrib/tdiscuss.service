@@ -1,11 +1,62 @@
 [Unit]
-Description=tDiscuss messageboard
+Description=tdiscuss messageboard
+# Users of PGDG will need to add the version number (e.g. postgresql-17.service)
+After=network.target postgresql.service
+Requires=postgresql.service
 
 [Service]
+Type=simple
 User=tdiscuss
+Group=tdiscuss
 EnvironmentFile=/etc/sysconfig/tdiscuss
 ExecStart=/usr/bin/tdiscuss $OPTIONS
+Restart=on-failure
+RestartSec=5
 
+# Filesystem restrictions
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths=/var/lib/tdiscuss
+
+# Kernel/system restrictions
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+
+# Privilege restrictions
+NoNewPrivileges=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+# Network restrictions (allow inet for HTTP/database, netlink for tsnet routing)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Namespace/personality restrictions
+RestrictNamespaces=true
+LockPersonality=true
+
+# Memory restrictions
+MemoryDenyWriteExecute=true
+
+# Realtime restrictions
+RestrictRealtime=true
+
+# System call restrictions
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+
+# Misc hardening
+UMask=0077
+PrivateUsers=true
+RemoveIPC=true
 
 [Install]
 WantedBy=multi-user.target
