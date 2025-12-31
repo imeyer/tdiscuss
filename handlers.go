@@ -97,11 +97,9 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var memberThreadPosts []MemberThreadPostTemplateData
-
 	// TODO: Implement ListAllThreadPostsGroupedByMember query
 	// For now, return empty list
-	memberThreadPosts = []MemberThreadPostTemplateData{
+	memberThreadPosts := []MemberThreadPostTemplateData{
 		// Stub data for testing
 		{MemberID: 1, MemberEmail: "admin@example.com", PostCount: 10},
 		{MemberID: 2, MemberEmail: "user@example.com", PostCount: 5},
@@ -198,7 +196,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 		// Update board title
 		if boardTitle != "" {
 			if err := s.queries.UpdateBoardTitle(r.Context(), boardTitle); err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to update board title", 
+				s.logger.ErrorContext(r.Context(), "failed to update board title",
 					slog.String("error", err.Error()))
 				s.renderError(w, http.StatusInternalServerError)
 				return
@@ -216,7 +214,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if err := s.queries.UpdateBoardEditWindow(r.Context(), pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to update edit window", 
+				s.logger.ErrorContext(r.Context(), "failed to update edit window",
 					slog.String("error", err.Error()))
 				s.renderError(w, http.StatusInternalServerError)
 				return
@@ -1081,6 +1079,35 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
 				"User":             user,
+	})
+}
+
+// FormattingGuide displays the markdown formatting help page.
+func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request) {
+	user, err := GetUser(r)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), err.Error())
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	// Generate example outputs to demonstrate the difference
+	subjectExample := parseHTMLStrict("Check out this **cool** <script>alert('xss')</script> thing!")
+
+	// Render emoji examples through the markdown parser
+	heartEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":heart:"))
+	thumbsUpEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":+1:"))
+	smileEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":smile:"))
+
+	s.renderTemplate(w, r, "formatting.html", map[string]interface{}{
+		"Title":          "Formatting Guide",
+		"Version":        s.version,
+		"GitSha":         s.gitSha,
+		"User":           user,
+		"SubjectExample": subjectExample,
+		"HeartEmoji":     template.HTML(heartEmoji),
+		"ThumbsUpEmoji":  template.HTML(thumbsUpEmoji),
+		"SmileEmoji":     template.HTML(smileEmoji),
 	})
 }
 

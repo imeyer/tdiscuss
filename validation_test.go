@@ -277,14 +277,39 @@ func TestSanitizeInput(t *testing.T) {
 			expected: "Hello World",
 		},
 		{
-			name:     "newlines and tabs",
-			input:    "Hello\n\t\rWorld",
+			name:     "tabs normalized to spaces",
+			input:    "Hello\t\tWorld",
 			expected: "Hello World",
+		},
+		{
+			name:     "newlines preserved",
+			input:    "Hello\nWorld",
+			expected: "Hello\nWorld",
+		},
+		{
+			name:     "multiple newlines normalized to two",
+			input:    "Hello\n\n\n\nWorld",
+			expected: "Hello\n\nWorld",
 		},
 		{
 			name:     "null bytes",
 			input:    "Hello\x00World",
 			expected: "HelloWorld",
+		},
+		{
+			name:     "CRLF normalized to LF",
+			input:    "Hello\r\nWorld",
+			expected: "Hello\nWorld",
+		},
+		{
+			name:     "standalone CR normalized to LF",
+			input:    "Hello\rWorld",
+			expected: "Hello\nWorld",
+		},
+		{
+			name:     "blockquote lines preserved",
+			input:    ">>> This\r\n>> Is\r\n> Cool\r\ntoo!",
+			expected: ">>> This\n>> Is\n> Cool\ntoo!",
 		},
 	}
 

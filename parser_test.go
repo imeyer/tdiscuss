@@ -90,7 +90,27 @@ func TestParseHTMLLessStrict(t *testing.T) {
 		{
 			name:     "Allow safe tags and attributes",
 			input:    `<a href="https://example.com" target="_blank">Safe link</a>`,
-			expected: `<a href="https://example.com" rel="nofollow">Safe link</a>`,
+			expected: `<a href="https://example.com" rel="nofollow noreferrer noopener" target="_blank">Safe link</a>`,
+		},
+		{
+			name:     "Heading h1 removal",
+			input:    `<h1>Big Header</h1><p>Content</p>`,
+			expected: `Big Header<p>Content</p>`,
+		},
+		{
+			name:     "Heading h2 removal",
+			input:    `<h2>Medium Header</h2><p>Content</p>`,
+			expected: `Medium Header<p>Content</p>`,
+		},
+		{
+			name:     "All headings removed",
+			input:    `<h1>One</h1><h2>Two</h2><h3>Three</h3><h4>Four</h4><h5>Five</h5><h6>Six</h6>`,
+			expected: `OneTwoThreeFourFiveSix`,
+		},
+		{
+			name:     "Tables removed",
+			input:    `<table><thead><tr><th>Header</th></tr></thead><tbody><tr><td>Cell</td></tr></tbody></table>`,
+			expected: `HeaderCell`,
 		},
 		{
 			name:     "Mixed safe and unsafe content",
@@ -223,6 +243,16 @@ func TestParseMarkdownToHTML(t *testing.T) {
 			name:     "Empty Input",
 			input:    "",
 			expected: "",
+		},
+		{
+			name:     "Email addresses not autolinked",
+			input:    "Contact us at user@example.com for help.",
+			expected: "<p>Contact us at user@example.com for help.</p>\n",
+		},
+		{
+			name:     "URLs still autolinked",
+			input:    "Visit https://example.com for more info.",
+			expected: "<p>Visit <a href=\"https://example.com\">https://example.com</a> for more info.</p>\n",
 		},
 	}
 

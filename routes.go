@@ -27,22 +27,22 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	// Configure rate limiting
 	// We need to use the actual metric.Meter from the original config
 	ms.RateLimitConfig.Meter = dsvc.telemetry.Meter
-	
+
 	// Check if we're in dev mode based on debug flag
 	isDevMode := dsvc.logger.Enabled(context.Background(), slog.LevelDebug)
-	
+
 	// Configure rate limits with more permissive admin rate in dev mode
 	adminRate := 0.2 // Default: 1 request per 5 seconds
 	if isDevMode {
 		adminRate = 10.0 // Dev mode: 10 requests per second
 	}
-	
+
 	ms.RateLimitConfig.EndpointLimits = map[string]middleware.EndpointLimit{
 		"/thread/new":        {Pattern: "/thread/new", Rate: 0.5, Burst: 2},      // 1 thread per 2 seconds
 		"/thread/{tid}":      {Pattern: "/thread/{tid}", Rate: 2, Burst: 5},      // 2 posts per second
 		"/thread/{tid}/edit": {Pattern: "/thread/{tid}/edit", Rate: 1, Burst: 3}, // 1 edit per second
 		"/member/edit":       {Pattern: "/member/edit", Rate: 0.5, Burst: 2},     // 1 profile update per 2 seconds
-		"/admin":             {Pattern: "/admin", Rate: adminRate, Burst: 1},      // Varies based on dev mode
+		"/admin":             {Pattern: "/admin", Rate: adminRate, Burst: 1},     // Varies based on dev mode
 	}
 
 	// Configure observability
@@ -64,7 +64,7 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	// Create middleware chains
 	// Add board data middleware to all authenticated chains
 	boardDataMiddleware := middleware.BoardDataMiddleware(querierAdapter)
-	
+
 	// All routes require Tailscale authentication
 	authChain := ms.CreateAuthenticatedChain().Append(boardDataMiddleware)
 	adminChain := ms.CreateAdminChain().Append(boardDataMiddleware)
@@ -82,6 +82,7 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	mux.Handle("POST /thread/{tid}", authChain.ThenFunc(dsvc.CreateThreadPost))
 	mux.Handle("GET /member/edit", authChain.ThenFunc(dsvc.EditMemberProfile))
 	mux.Handle("POST /member/edit", authChain.ThenFunc(dsvc.EditMemberProfile))
+	mux.Handle("GET /formatting", authChain.ThenFunc(dsvc.FormattingGuide))
 
 	// Admin routes
 	mux.Handle("GET /admin", adminChain.ThenFunc(dsvc.Admin))

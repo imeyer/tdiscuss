@@ -11,7 +11,7 @@
             <input type="text" id="subject" name="subject" required value="{{ .Thread.Subject }}">
         </div>
         <div class="form-group">
-            <label for="thread_body">body</label>
+            <label for="thread_body">body <a href="/formatting" class="form-help-link">formatting help</a></label>
             <textarea id="thread_body" name="thread_body" rows="10" cols="75"
                 required>{{ .Thread.Body.String }}</textarea>
         </div>

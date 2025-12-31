@@ -6,7 +6,7 @@
 <div class="form-container">
     <form action="/thread/{{ .ThreadID }}/{{ .Post.ID }}/edit" method="POST">
         <div class="form-group">
-            <label for="thread_body">body</label>
+            <label for="thread_body">body <a href="/formatting" class="form-help-link">formatting help</a></label>
             <textarea id="thread_body" name="thread_body" rows="10" cols="75"
                 required>{{ .Post.Body.String }}</textarea>
         </div>

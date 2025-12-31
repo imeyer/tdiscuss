@@ -255,12 +255,20 @@ func ValidateAdminForm(boardTitle, editWindowStr string) (string, int64, Validat
 
 // SanitizeInput performs basic input sanitization
 func SanitizeInput(input string) string {
+	// Normalize line endings: CRLF -> LF, standalone CR -> LF
+	input = strings.ReplaceAll(input, "\r\n", "\n")
+	input = strings.ReplaceAll(input, "\r", "\n")
+
 	// Trim whitespace
 	input = strings.TrimSpace(input)
 
-	// Normalize whitespace (replace multiple spaces with single space)
-	spaceRegex := regexp.MustCompile(`\s+`)
-	input = spaceRegex.ReplaceAllString(input, " ")
+	// Normalize horizontal whitespace (spaces/tabs) but preserve newlines
+	hSpaceRegex := regexp.MustCompile(`[^\S\n]+`)
+	input = hSpaceRegex.ReplaceAllString(input, " ")
+
+	// Normalize multiple newlines to max of 2 (allow paragraph breaks)
+	newlineRegex := regexp.MustCompile(`\n{3,}`)
+	input = newlineRegex.ReplaceAllString(input, "\n\n")
 
 	// Remove null bytes
 	input = strings.ReplaceAll(input, "\x00", "")

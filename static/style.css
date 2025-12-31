@@ -1241,8 +1241,257 @@ input[type="button"]:hover,
     line-height: 1.6;
 }
 
+.threadpost-body blockquote {
+    margin: 0.5rem 0;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--accent-color);
+    background-color: var(--surface-color);
+    border-radius: 0 var(--border-radius-small) var(--border-radius-small) 0;
+}
+
+.threadpost-body blockquote + blockquote {
+    margin-top: 0.25rem;
+}
+
+.threadpost-body blockquote p {
+    margin: 0;
+}
+
+.threadpost-body blockquote blockquote {
+    margin-top: 0.5rem;
+    border-left-color: var(--text-color-muted);
+    background-color: var(--background-color);
+}
+
+[data-theme="twilight-sakura"] .threadpost-body blockquote {
+    border-left-color: oklch(70% 0.25 350);
+    background-color: oklch(26% 0.03 280);
+}
+
+[data-theme="twilight-sakura"] .threadpost-body blockquote blockquote {
+    border-left-color: oklch(70% 0.25 350 / 0.5);
+    background-color: oklch(22% 0.02 280);
+}
+
+.permalink {
+    color: var(--text-color-muted);
+}
+
+.permalink:hover {
+    color: var(--accent-color);
+}
 
 [data-theme="twilight-sakura"] .threadpost-bubble {
     border-left: 2px solid oklch(70% 0.25 350 / 0.6);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+/* Formatting Guide */
+.formatting-guide {
+    padding: 1rem 1.5rem;
+}
+
+.formatting-section {
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color-subtle);
+    border-radius: var(--border-radius);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.formatting-section h4 {
+    margin: 0 0 0.5rem 0;
+    color: var(--text-color);
+    font-size: 1.25rem;
+}
+
+.formatting-section h5 {
+    margin: 1.5rem 0 0.75rem 0;
+    color: var(--text-color-secondary);
+    font-size: 1rem;
+    border-bottom: 1px solid var(--border-color-subtle);
+    padding-bottom: 0.5rem;
+}
+
+.section-description {
+    color: var(--text-color-secondary);
+    margin-bottom: 1rem;
+}
+
+.formatting-tip {
+    font-size: 0.875rem;
+    color: var(--text-color-muted);
+    background-color: var(--background-color);
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--accent-color);
+    border-radius: 0 var(--border-radius-small) var(--border-radius-small) 0;
+    margin: 1rem 0;
+}
+
+.formatting-examples {
+    margin-top: 1rem;
+}
+
+.formatting-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.formatting-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--background-color);
+    border-radius: var(--border-radius-small);
+}
+
+.formatting-item code {
+    background-color: var(--surface-color);
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--border-radius-small);
+    font-size: 0.875rem;
+    border: 1px solid var(--border-color-subtle);
+}
+
+.formatting-item code.rendered-code {
+    background-color: var(--background-color);
+    border: 1px solid var(--accent-color);
+}
+
+.formatting-item .arrow {
+    color: var(--text-color-muted);
+    flex-shrink: 0;
+}
+
+.example {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color-subtle);
+    border-radius: var(--border-radius-small);
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.example-input,
+.example-output {
+    padding: 1rem;
+}
+
+.example-input {
+    border-bottom: 1px solid var(--border-color-subtle);
+}
+
+.example-input pre,
+.example-output pre {
+    margin: 0.5rem 0 0 0;
+    padding: 0.75rem;
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-small);
+    overflow-x: auto;
+}
+
+.example-input code,
+.example-output code {
+    font-size: 0.875rem;
+}
+
+.rendered {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background-color: var(--surface-color);
+    border-radius: var(--border-radius-small);
+}
+
+.rendered blockquote {
+    margin: 0;
+    padding-left: 1rem;
+    border-left: 3px solid var(--border-color);
+    color: var(--text-color-secondary);
+}
+
+/* Code blocks - distinct styling */
+pre.code-block,
+.threadpost-body pre {
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--accent-color);
+    border-radius: var(--border-radius-small);
+    padding: 1rem;
+    overflow-x: auto;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+pre.code-block code,
+.threadpost-body pre code {
+    background: none;
+    padding: 0;
+    border: none;
+    font-size: inherit;
+    white-space: pre-wrap;
+    display: block;
+}
+
+.not-allowed {
+    background-color: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: var(--border-radius-small);
+    padding: 1rem;
+}
+
+.not-allowed p {
+    margin: 0 0 0.75rem 0;
+    color: var(--text-color-secondary);
+}
+
+.not-allowed .formatting-item {
+    background-color: rgba(231, 76, 60, 0.05);
+}
+
+[data-theme="twilight-sakura"] .formatting-section {
+    background-color: oklch(30% 0.035 280);
+    border-color: oklch(85% 0.18 350 / 0.3);
+}
+
+[data-theme="twilight-sakura"] .formatting-item {
+    background-color: oklch(24% 0.025 280);
+}
+
+[data-theme="twilight-sakura"] .example {
+    background-color: oklch(24% 0.025 280);
+    border-color: oklch(85% 0.18 350 / 0.2);
+}
+
+[data-theme="twilight-sakura"] pre.code-block,
+[data-theme="twilight-sakura"] .threadpost-body pre {
+    background-color: oklch(18% 0.015 280);
+    border-color: oklch(70% 0.25 350 / 0.3);
+    border-left-color: oklch(70% 0.25 350);
+}
+
+[data-theme="twilight-sakura"] .not-allowed {
+    background-color: rgba(231, 76, 60, 0.15);
+    border-color: rgba(231, 76, 60, 0.4);
+}
+
+[data-theme="twilight-sakura"] .not-allowed .formatting-item {
+    background-color: rgba(231, 76, 60, 0.1);
+}
+
+/* Form help links */
+.form-help-link {
+    font-size: 0.75rem;
+    font-weight: normal;
+    color: var(--text-color-muted);
+    text-decoration: none;
+    margin-left: 0.5rem;
+}
+
+.form-help-link:hover {
+    color: var(--link-color);
+    text-decoration: underline;
 }

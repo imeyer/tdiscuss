@@ -1,0 +1,221 @@
+{{ template "header" .}}
+
+{{ template "menu" .}}
+
+<h3 class="page-title">Formatting Guide</h3>
+
+<div class="formatting-guide">
+    <section class="formatting-section">
+        <h4>Thread Subjects</h4>
+        <p class="section-description">Subjects are plain text only. All HTML and markdown is stripped for clean, consistent titles.</p>
+
+        <div class="formatting-examples">
+            <div class="example">
+                <div class="example-input">
+                    <strong>You type:</strong>
+                    <code>Check out this **cool** thing!</code>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">{{ .SubjectExample }}</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="formatting-section">
+        <h4>Post Bodies</h4>
+        <p class="section-description">Bodies support some markdown. Headings (h1-h6) are not allowed to keep discussions readable.</p>
+
+        <div class="formatting-examples">
+            <h5>Text Formatting</h5>
+            <div class="formatting-grid">
+                <div class="formatting-item">
+                    <code>**bold**</code>
+                    <span class="arrow">&rarr;</span>
+                    <strong>bold</strong>
+                </div>
+                <div class="formatting-item">
+                    <code>*italic*</code>
+                    <span class="arrow">&rarr;</span>
+                    <em>italic</em>
+                </div>
+                <div class="formatting-item">
+                    <code>~~strikethrough~~</code>
+                    <span class="arrow">&rarr;</span>
+                    <del>strikethrough</del>
+                </div>
+                <div class="formatting-item">
+                    <code>`inline code`</code>
+                    <span class="arrow">&rarr;</span>
+                    <code class="rendered-code">inline code</code>
+                </div>
+            </div>
+
+            <h5>Links &amp; Images</h5>
+            <div class="formatting-grid">
+                <div class="formatting-item">
+                    <code>[link text](https://example.com)</code>
+                    <span class="arrow">&rarr;</span>
+                    <a href="https://example.com" rel="nofollow noreferrer noopener" target="_blank">link text</a>
+                </div>
+                <div class="formatting-item">
+                    <code>![alt text](https://example.com/img.png)</code>
+                    <span class="arrow">&rarr;</span>
+                    <em>(image displayed)</em>
+                </div>
+            </div>
+
+            <h5>Lists</h5>
+            <div class="example">
+                <div class="example-input">
+                    <strong>You type:</strong>
+<pre>- Item one
+- Item two
+  - Nested item</pre>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">
+                        <ul>
+                            <li>Item one</li>
+                            <li>Item two
+                                <ul>
+                                    <li>Nested item</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="example">
+                <div class="example-input">
+                    <strong>You type:</strong>
+<pre>1. First
+2. Second
+3. Third</pre>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">
+                        <ol>
+                            <li>First</li>
+                            <li>Second</li>
+                            <li>Third</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+
+            <h5>Code Blocks</h5>
+            <div class="example">
+                <div class="example-input">
+                    <strong>You type:</strong>
+<pre>```go
+func main() {
+    fmt.Println("Hello!")
+}
+```</pre>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">
+<pre class="code-block"><code class="language-go">func main() {
+    fmt.Println("Hello!")
+}</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <h5>Blockquotes</h5>
+            <div class="example">
+                <div class="example-input">
+                    <strong>You type:</strong>
+<pre>> This is a quote
+> from someone wise</pre>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">
+                        <blockquote>
+                            <p>This is a quote<br>from someone wise</p>
+                        </blockquote>
+                    </div>
+                </div>
+            </div>
+
+            <div class="example">
+                <div class="example-input">
+                    <strong>Nested quotes (for reply chains):</strong>
+<pre>> Alice wrote:
+> > Bob wrote:
+> > > Original message
+> > Bob's reply
+> Alice's reply
+My response</pre>
+                </div>
+                <div class="example-output">
+                    <strong>Result:</strong>
+                    <div class="rendered">
+                        <blockquote>
+                            <p>Alice wrote:</p>
+                            <blockquote>
+                                <p>Bob wrote:</p>
+                                <blockquote><p>Original message</p></blockquote>
+                                <p>Bob's reply</p>
+                            </blockquote>
+                            <p>Alice's reply</p>
+                        </blockquote>
+                        <p>My response</p>
+                    </div>
+                </div>
+            </div>
+
+            <p class="formatting-tip"><strong>Tip:</strong> More <code>&gt;</code> symbols = deeper nesting. Keep the same prefix on all lines that belong together. Blank lines between quoted lines create separate blockquotes.</p>
+
+            <h5>Emoji</h5>
+            <div class="formatting-grid">
+                <div class="formatting-item">
+                    <code>:heart:</code>
+                    <span class="arrow">&rarr;</span>
+                    {{ .HeartEmoji }}
+                </div>
+                <div class="formatting-item">
+                    <code>:+1:</code>
+                    <span class="arrow">&rarr;</span>
+                    {{ .ThumbsUpEmoji }}
+                </div>
+                <div class="formatting-item">
+                    <code>:smile:</code>
+                    <span class="arrow">&rarr;</span>
+                    {{ .SmileEmoji }}
+                </div>
+            </div>
+
+            <h5>What's NOT Allowed</h5>
+            <div class="not-allowed">
+                <p>Headings and tables are stripped to keep discussions readable:</p>
+                <div class="formatting-grid">
+                    <div class="formatting-item">
+                        <code># Big Heading</code>
+                        <span class="arrow">&rarr;</span>
+                        <span>Big Heading <em>(stripped)</em></span>
+                    </div>
+                    <div class="formatting-item">
+                        <code>## Medium Heading</code>
+                        <span class="arrow">&rarr;</span>
+                        <span>Medium Heading <em>(stripped)</em></span>
+                    </div>
+                    <div class="formatting-item">
+                        <code>| table | syntax |</code>
+                        <span class="arrow">&rarr;</span>
+                        <span><em>(stripped)</em></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+{{ template "footer" .}}

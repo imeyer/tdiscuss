@@ -20,7 +20,16 @@ func parseMarkdownToHTML(text string) string {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			emoji.Emoji,
-			extension.GFM,
+			// GFM extensions individually
+			extension.Strikethrough,
+			extension.Table,
+			extension.TaskList,
+			// Linkify URLs but not email addresses.
+			// Note: passing nil uses goldmark's default email finder, so we use
+			// a regex that only matches empty strings to effectively disable it.
+			extension.NewLinkify(
+				extension.WithLinkifyEmailRegexp(regexp.MustCompile(`^$`)),
+			),
 		),
 		goldmark.WithRendererOptions(
 			gmhtml.WithUnsafe(),
@@ -43,9 +52,44 @@ func parseHTMLStrict(text string) string {
 }
 
 func parseHTMLLessStrict(text string) string {
-	lessStrict := bluemonday.UGCPolicy()
+	return bodyPolicy().Sanitize(text)
+}
 
-	return lessStrict.Sanitize(text)
+// bodyPolicy returns a bluemonday policy for thread/post bodies.
+// Based on UGCPolicy but excludes headings (h1-h6) to prevent
+// users from dominating the page with large headers.
+func bodyPolicy() *bluemonday.Policy {
+	p := bluemonday.NewPolicy()
+
+	// Allowed block elements (no h1-h6, no tables)
+	p.AllowElements("p", "br", "hr", "div", "span")
+	p.AllowElements("blockquote", "pre")
+	p.AllowElements("ul", "ol", "li", "dl", "dt", "dd")
+
+	// Inline formatting
+	p.AllowElements("b", "i", "strong", "em", "u", "s", "strike", "del", "ins")
+	p.AllowElements("sub", "sup", "small", "mark")
+	p.AllowElements("abbr", "acronym", "cite", "dfn", "kbd", "samp", "var")
+
+	// Code
+	p.AllowElements("code")
+	p.AllowAttrs("class").Matching(regexp.MustCompile(`^language-[\w-]+$`)).OnElements("code")
+
+	// Links
+	p.AllowAttrs("href").OnElements("a")
+	p.AllowAttrs("title").OnElements("a")
+	p.AllowRelativeURLs(true)
+	p.RequireNoFollowOnLinks(true)
+	p.RequireNoReferrerOnLinks(true)
+	p.AddTargetBlankToFullyQualifiedLinks(true)
+
+	// Images
+	p.AllowImages()
+
+	// Task lists (GFM)
+	p.AllowAttrs("type", "disabled", "checked").OnElements("input")
+
+	return p
 }
 
 func parseID(path string) (int64, error) {

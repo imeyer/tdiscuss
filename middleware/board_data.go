@@ -38,6 +38,6 @@ func BoardDataMiddleware(querier BoardDataQuerier) func(http.Handler) http.Handl
 
 // GetBoardData retrieves board data from the request context
 func GetBoardData(ctx context.Context) (interface{}, bool) {
-	boardData, ok := ctx.Value(boardDataContextKey{}).(interface{})
-	return boardData, ok && boardData != nil
+	boardData := ctx.Value(boardDataContextKey{})
+	return boardData, boardData != nil
 }

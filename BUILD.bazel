@@ -103,6 +103,7 @@ go_library(
         "tmpl/edit-thread.html",
         "tmpl/error.html",
         "tmpl/footer.html",
+        "tmpl/formatting.html",
         "tmpl/header.html",
         "tmpl/index-thread-partial.html",
         "tmpl/index.html",
