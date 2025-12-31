@@ -1,0 +1,34 @@
+# tdiscuss configuration
+# See tdiscuss -help for all available options
+
+# Hostname on your tailnet
+TSNET_HOSTNAME=discuss
+
+# Database connection string
+DATABASE_URL=postgres://tdiscuss:changeme@localhost/tdiscuss?sslmode=disable
+
+# Options passed to tdiscuss binary
+# Add --otlp to enable OTLP export instead of Prometheus metrics
+OPTIONS="-otlp -data-location=/var/lib/tdiscuss"
+
+# OpenTelemetry Configuration
+# Uncomment and configure these to enable OTLP export of traces, metrics, and logs.
+# You must also add -otlp to OPTIONS above.
+
+# OTLP collector endpoint (applies to all signals: traces, metrics, logs)
+# Uses HTTP protocol on port 4318 by default
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+
+# Or configure per-signal endpoints individually:
+#OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces
+#OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://localhost:4318/v1/metrics
+#OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://localhost:4318/v1/logs
+
+# Service name reported to the collector
+#OTEL_SERVICE_NAME=tdiscuss
+
+# Optional: headers for authentication (e.g., for cloud providers)
+#OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer YOUR_TOKEN
+
+# Optional: export timeout in milliseconds (default: 10000)
+#OTEL_EXPORTER_OTLP_TIMEOUT=10000
