@@ -227,8 +227,8 @@ github.com/yuin/goldmark-emoji v1.0.5 h1:EMVWyCGPlXJfUXBXpuMu+ii3TIaxbVBnEX9uaDC
 github.com/yuin/goldmark-emoji v1.0.5/go.mod h1:tTkZEbwu5wkPmgTcitqddVxY9osFZiavD+r4AzQrh1U=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
-go.opentelemetry.io/contrib/bridges/otelslog v0.10.0 h1:lRKWBp9nWoBe1HKXzc3ovkro7YZSb72X2+3zYNxfXiU=
-go.opentelemetry.io/contrib/bridges/otelslog v0.10.0/go.mod h1:D+iyUv/Wxbw5LUDO5oh7x744ypftIryiWjoj42I6EKs=
+go.opentelemetry.io/contrib/bridges/otelslog v0.14.0 h1:eypSOd+0txRKCXPNyqLPsbSfA0jULgJcGmSAdFAnrCM=
+go.opentelemetry.io/contrib/bridges/otelslog v0.14.0/go.mod h1:CRGvIBL/aAxpQU34ZxyQVFlovVcp67s4cAmQu8Jh9mc=
 go.opentelemetry.io/contrib/processors/minsev v0.12.0 h1:4WiHaTWqvBxnWsmbD8v9ELxQ+JXSJJUODAzY7JVKZgA=
 go.opentelemetry.io/contrib/processors/minsev v0.12.0/go.mod h1:XdvsUcd06SHLp3eIxr9uHPjkN0hb0dSx/aiymEuYP/w=
 go.opentelemetry.io/otel v1.39.0 h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=
