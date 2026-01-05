@@ -6,7 +6,7 @@ require (
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/stretchr/testify v1.11.1
-	github.com/yuin/goldmark v1.7.8
+	github.com/yuin/goldmark v1.7.14
 	github.com/yuin/goldmark-emoji v1.0.5
 	go.opentelemetry.io/contrib/bridges/otelslog v0.10.0
 	go.opentelemetry.io/contrib/processors/minsev v0.12.0
