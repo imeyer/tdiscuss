@@ -14,12 +14,17 @@ def cross_compile_binary(name, goos, goarch):
     constraint_os = "@platforms//os:" + platform_os
     constraint_arch = "@platforms//cpu:" + platform_arch
 
+    # Linux binaries are pure/static (deployed to distroless/scratch). darwin
+    # must use cgo: tailscale's certstore links CoreFoundation/Security on macOS,
+    # so these build only on a macOS host and are not statically linked.
+    pure = "off" if goos == "darwin" else "on"
+
     go_binary(
         name = "{}-{}-{}".format(name, goos, goarch),
         embed = [":{}_lib".format(name)],
         goarch = goarch,  # Use Go's architecture naming for the compiler
         goos = goos,      # Use Go's OS naming for the compiler
-        pure = "on",      # Disable cgo for pure Go builds
+        pure = pure,
         # This ensures the target is only built when compatible
         target_compatible_with = [
             constraint_os,

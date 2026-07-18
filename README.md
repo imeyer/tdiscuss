@@ -7,6 +7,17 @@ Discussion board for your tailnet
 1. Install [bazelisk](https://github.com/bazelbuild/bazelisk)
 1. `make` will run tests and build
 
+### Platforms
+
+Prebuilt release binaries are published for Linux (amd64, arm64) and Apple
+Silicon macOS (arm64).
+
+**Intel macOS (amd64) is still supported** — it just isn't part of the release
+matrix, because the macOS build needs cgo (Tailscale's `certstore` links Apple
+frameworks) and GitHub has retired its free Intel macOS runners. To use tdiscuss
+on an Intel Mac, build from source on that machine (`make`). If someone is kind
+enough to donate an Intel macOS runner, we'll happily add it back to releases.
+
 ## Running for development
 
 1. Be a [tailscale](https://tailscale.com) user

@@ -64,11 +64,17 @@ create_cross_platform_targets(
 filegroup(
     name = "all_platforms",
     srcs = [
-        ":tdiscuss-darwin-amd64",
-        ":tdiscuss-darwin-arm64",
         ":tdiscuss-linux-amd64",
         ":tdiscuss-linux-arm64",
-    ],
+    ] + select({
+        # darwin binaries are cgo and only build on a macOS host; include them
+        # only when the host can produce them so `bazel build //:all_platforms`
+        # still works on Linux (which builds just the linux binaries).
+        "@platforms//os:macos": [
+            ":tdiscuss-darwin-arm64",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 
