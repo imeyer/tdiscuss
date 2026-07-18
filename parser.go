@@ -14,7 +14,22 @@ import (
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 )
 
-func parseMarkdownToHTML(text string) string {
+// neverMatchEmail disables goldmark's email autolinking. It must never match
+// any input: an empty-matching regexp (e.g. `^$`) makes the linkify parser
+// compute line[-1:] and panic with "slice bounds out of range [:-1]" on inputs
+// as small as "00(". This pattern requires a codepoint outside the Unicode
+// range, so it can never match.
+var neverMatchEmail = regexp.MustCompile(`[^\x00-\x{10FFFF}]`)
+
+func parseMarkdownToHTML(text string) (result string) {
+	// Defense in depth: goldmark extensions have panicked on malformed input
+	// before. Recover so a single crafted post can't 500 the request.
+	defer func() {
+		if r := recover(); r != nil {
+			result = html.EscapeString(text)
+		}
+	}()
+
 	var buf bytes.Buffer
 
 	md := goldmark.New(
@@ -25,10 +40,8 @@ func parseMarkdownToHTML(text string) string {
 			extension.Table,
 			extension.TaskList,
 			// Linkify URLs but not email addresses.
-			// Note: passing nil uses goldmark's default email finder, so we use
-			// a regex that only matches empty strings to effectively disable it.
 			extension.NewLinkify(
-				extension.WithLinkifyEmailRegexp(regexp.MustCompile(`^$`)),
+				extension.WithLinkifyEmailRegexp(neverMatchEmail),
 			),
 		),
 		goldmark.WithRendererOptions(
