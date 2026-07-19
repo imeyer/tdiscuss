@@ -52,42 +52,6 @@ func (qw *QueriesWrapper) WithTx(tx pgx.Tx) ExtendedQuerier {
 }
 
 // Server functions
-func checkTailscaleReady(ctx context.Context, lc TailscaleClient, logger *slog.Logger) error {
-	for {
-		st, err := lc.Status(ctx)
-		if err != nil {
-			return fmt.Errorf("error retrieving tailscale status; retrying: %w", err)
-		} else {
-			switch st.BackendState {
-			case "NoState":
-				logger.DebugContext(ctx, "no state")
-				time.Sleep(5 * time.Second)
-				continue
-			case "NeedsLogin":
-				logger.InfoContext(ctx, "needs login to tailscale", slog.String("auth_url", st.AuthURL))
-				time.Sleep(30 * time.Second)
-				continue
-			case "NeedsMachineAuth":
-				logger.DebugContext(ctx, fmt.Sprintf("%v", st))
-				continue
-			case "Stopped":
-				logger.InfoContext(ctx, "tsnet stopped")
-				return nil
-			case "Starting":
-				logger.InfoContext(ctx, "starting tsnet")
-				continue
-			case "Running":
-				nopeers, err := lc.StatusWithoutPeers(ctx)
-				if err != nil {
-					logger.ErrorContext(ctx, err.Error())
-				}
-				logger.InfoContext(ctx, "tsnet running", "certDomains", nopeers.CertDomains)
-				return nil
-			}
-		}
-	}
-}
-
 func createHTTPServer(mux http.Handler) *http.Server {
 	return &http.Server{
 		Addr:         ":80",

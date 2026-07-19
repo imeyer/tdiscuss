@@ -18,6 +18,13 @@ import (
 
 const BOARD_TITLE string = "tdiscuss - A Discussion Board for your Tailnet"
 
+// tsnetUpTimeout bounds how long we wait for the tailnet node to reach the
+// Running state at startup. Generous enough for auth-key bring-up plus DERP
+// negotiation; a genuinely stuck node fails fast for the supervisor to restart.
+// Note: interactive first-time login (no auth key) may need longer than this —
+// provide TS_AUTHKEY so bring-up is non-interactive.
+const tsnetUpTimeout = 2 * time.Minute
+
 //go:embed tmpl/*.html
 var templateFiles embed.FS
 
@@ -108,12 +115,20 @@ func main() {
 
 	tmpls := setupTemplates()
 
-	lc := getTailscaleLocalClient(s, logger)
-
-	if err := checkTailscaleReady(ctx, lc, logger); err != nil {
+	// Up connects to the tailnet and blocks until the node is Running with an
+	// assigned IP, watching the IPN bus rather than polling. Bound the wait so
+	// a stuck bring-up (bad auth key, no network/DERP) fails the process for the
+	// supervisor to restart instead of hanging indefinitely.
+	upCtx, upCancel := context.WithTimeout(ctx, tsnetUpTimeout)
+	status, err := s.Up(upCtx)
+	upCancel()
+	if err != nil {
 		logger.Error("tailscale not ready", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+	logger.Info("tsnet running", slog.String("certDomains", fmt.Sprintf("%v", status.CertDomains)))
+
+	lc := getTailscaleLocalClient(s, logger)
 
 	queries := New(dbconn)
 	wrappedQueries := &QueriesWrapper{Queries: queries}

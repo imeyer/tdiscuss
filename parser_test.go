@@ -277,3 +277,22 @@ func TestParseMarkdownToHTMLError(t *testing.T) {
 		t.Errorf("parseMarkdownToHTML failed to handle large input")
 	}
 }
+
+// TestParseMarkdownToHTMLNoPanic guards against the linkify email-regexp panic
+// (an empty-matching regexp drove goldmark to compute line[-1:] and panic with
+// "slice bounds out of range [:-1]" on inputs as small as "00(").
+func TestParseMarkdownToHTMLNoPanic(t *testing.T) {
+	inputs := []string{"00(", "a(", "foo (bar", "(", "test@", "x(y(z("}
+	for _, in := range inputs {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("parseMarkdownToHTML(%q) panicked: %v", in, r)
+				}
+			}()
+			if got := parseMarkdownToHTML(in); got == "" {
+				t.Errorf("parseMarkdownToHTML(%q) returned empty string", in)
+			}
+		}()
+	}
+}
