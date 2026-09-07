@@ -48,7 +48,38 @@ type MockQueries struct {
 	UpdateBoardTitleFunc      func(ctx context.Context, arg string) error
 	UpdateThreadFunc          func(ctx context.Context, arg UpdateThreadParams) error
 	UpdateThreadPostFunc      func(ctx context.Context, arg UpdateThreadPostParams) error
-	BlockMemberFunc           func(ctx context.Context, id int64) error
+	IsMemberAdminFunc         func(ctx context.Context, id int64) (bool, error)
+	ListMembersFunc           func(ctx context.Context) ([]ListMembersRow, error)
+	SetMemberAdminFunc        func(ctx context.Context, arg SetMemberAdminParams) error
+	SetMemberBlockedFunc      func(ctx context.Context, arg SetMemberBlockedParams) error
+}
+
+func (m *MockQueries) IsMemberAdmin(ctx context.Context, id int64) (bool, error) {
+	if m.IsMemberAdminFunc != nil {
+		return m.IsMemberAdminFunc(ctx, id)
+	}
+	return false, nil
+}
+
+func (m *MockQueries) SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error {
+	if m.SetMemberBlockedFunc != nil {
+		return m.SetMemberBlockedFunc(ctx, arg)
+	}
+	return nil
+}
+
+func (m *MockQueries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
+	if m.ListMembersFunc != nil {
+		return m.ListMembersFunc(ctx)
+	}
+	return nil, nil
+}
+
+func (m *MockQueries) SetMemberAdmin(ctx context.Context, arg SetMemberAdminParams) error {
+	if m.SetMemberAdminFunc != nil {
+		return m.SetMemberAdminFunc(ctx, arg)
+	}
+	return nil
 }
 
 func (m *MockQueries) CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error) {
@@ -210,14 +241,6 @@ func (m *MockQueries) UpdateThread(ctx context.Context, arg UpdateThreadParams) 
 func (m *MockQueries) UpdateThreadPost(ctx context.Context, arg UpdateThreadPostParams) error {
 	if m.UpdateThreadPostFunc != nil {
 		return m.UpdateThreadPostFunc(ctx, arg)
-	}
-
-	return nil
-}
-
-func (m *MockQueries) BlockMember(ctx context.Context, id int64) error {
-	if m.BlockMemberFunc != nil {
-		return m.BlockMemberFunc(ctx, id)
 	}
 
 	return nil

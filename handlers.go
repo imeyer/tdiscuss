@@ -1,10 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
-	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -23,6 +23,22 @@ type MemberThreadPostTemplateData struct {
 	MemberID    int64
 	MemberEmail string
 	PostCount   int64
+}
+
+// MemberAdminTemplateData is one row of the admin page's member list.
+type MemberAdminTemplateData struct {
+	MemberID    int64
+	MemberEmail string
+	// IsAdmin reflects the member.is_admin column only. A member may also
+	// hold admin through a tailnet capability grant, which is not visible
+	// here and cannot be revoked from this page.
+	IsAdmin    bool
+	IsBlocked  bool
+	DateJoined pgtype.Timestamptz
+	PostCount  int64
+	// IsSelf marks the acting admin's own row, whose admin status this page
+	// deliberately refuses to change.
+	IsSelf bool
 }
 
 type ThreadPostTemplateData struct {
@@ -97,12 +113,28 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement ListAllThreadPostsGroupedByMember query
-	// For now, return empty list
-	memberThreadPosts := []MemberThreadPostTemplateData{
-		// Stub data for testing
-		{MemberID: 1, MemberEmail: "admin@example.com", PostCount: 10},
-		{MemberID: 2, MemberEmail: "user@example.com", PostCount: 5},
+	members, err := s.queries.ListMembers(r.Context())
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "error listing members", slog.String("error", err.Error()))
+		s.renderError(w, http.StatusInternalServerError)
+		return
+	}
+
+	memberData := make([]MemberAdminTemplateData, 0, len(members))
+	for _, m := range members {
+		memberData = append(memberData, MemberAdminTemplateData{
+			MemberID:    m.ID,
+			MemberEmail: m.Email,
+			IsAdmin:     m.IsAdmin,
+			IsBlocked:   m.IsBlocked,
+			DateJoined:  m.DateJoined,
+			PostCount:   int64(m.TotalThreadPosts),
+			// The admin page can only manage the is_admin column. Whether
+			// this member also holds a policy-file grant is unknowable from
+			// here: capability grants arrive per-peer on that peer's own
+			// request, so we only ever see the calling member's grants.
+			IsSelf: m.ID == user.ID,
+		})
 	}
 
 	s.logger.DebugContext(r.Context(), "rendering admin template")
@@ -110,7 +142,7 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, r, "admin.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"BoardData":        boardData,
-		"Posts":            memberThreadPosts,
+		"Members":          memberData,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
 		"CurrentUserEmail": user.Email,
@@ -169,22 +201,126 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch action {
-	case "delete_member":
+	// "delete_member" is the original name for this action, kept working
+	// because it never deleted anything - it blocked.
+	case "block_member", "unblock_member", "delete_member":
 		if memberID <= 0 {
 			s.logger.ErrorContext(r.Context(), "invalid member ID", slog.Int64("memberID", memberID))
 			s.renderError(w, http.StatusBadRequest)
 			return
 		}
-		// Block the member instead of deleting
-		err := s.queries.BlockMember(r.Context(), memberID)
-		if err != nil {
-			s.logger.ErrorContext(r.Context(), "failed to block member",
+
+		// Refuse to block yourself. A blocked member gets a 404 on every
+		// route, including this page, so self-blocking is an immediate and
+		// unrecoverable lockout for that account.
+		if memberID == user.ID {
+			s.logger.WarnContext(r.Context(), "admin attempted to change their own blocked status",
+				slog.Int64("actor_id", user.ID),
+				slog.String("action", action))
+			s.renderError(w, http.StatusBadRequest)
+			return
+		}
+
+		blocked := action != "unblock_member"
+
+		// Refuse to block an admin. Blocking outranks every other privilege -
+		// a blocked member is refused before any admin check runs - so this
+		// would otherwise let one admin lock another out of the board, with
+		// no way back in short of a SQL update.
+		//
+		// This tests the is_admin column, which is the only admin status the
+		// board can see for another member. A member who is an admin solely
+		// through a tailnet capability grant is not protected here, because
+		// grants are only ever visible on that member's own request.
+		//
+		// Unblocking is always allowed: an admin blocked before this rule
+		// existed still needs a way back.
+		if blocked {
+			targetIsAdmin, err := s.queries.IsMemberAdmin(r.Context(), memberID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					s.logger.WarnContext(r.Context(), "attempt to block unknown member",
+						slog.Int64("actor_id", user.ID),
+						slog.Int64("member_id", memberID))
+					s.renderError(w, http.StatusBadRequest)
+					return
+				}
+				s.logger.ErrorContext(r.Context(), "failed to look up member admin status",
+					slog.Int64("memberID", memberID),
+					slog.String("error", err.Error()))
+				s.renderError(w, http.StatusInternalServerError)
+				return
+			}
+
+			if targetIsAdmin {
+				s.logger.WarnContext(r.Context(), "admin attempted to block another admin",
+					slog.Int64("actor_id", user.ID),
+					slog.Int64("member_id", memberID))
+				s.renderError(w, http.StatusForbidden)
+				return
+			}
+		}
+
+		if err := s.queries.SetMemberBlocked(r.Context(), SetMemberBlockedParams{
+			ID:        memberID,
+			IsBlocked: blocked,
+		}); err != nil {
+			s.logger.ErrorContext(r.Context(), "failed to set member blocked",
 				slog.Int64("memberID", memberID),
+				slog.Bool("is_blocked", blocked),
 				slog.String("error", err.Error()))
 			s.renderError(w, http.StatusInternalServerError)
 			return
 		}
-		s.logger.InfoContext(r.Context(), "member blocked successfully", slog.Int64("memberID", memberID))
+
+		s.logger.InfoContext(r.Context(), "member blocked status changed",
+			slog.Int64("actor_id", user.ID),
+			slog.Int64("member_id", memberID),
+			slog.Bool("is_blocked", blocked))
+
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
+	case "set_admin", "unset_admin":
+		if memberID <= 0 {
+			s.logger.ErrorContext(r.Context(), "invalid member ID", slog.Int64("memberID", memberID))
+			s.renderError(w, http.StatusBadRequest)
+			return
+		}
+
+		// Refuse to change your own admin status. Demoting yourself would
+		// drop the privilege mid-session and can leave a board with no
+		// database admin at all; promoting yourself is a no-op. Either way,
+		// one admin changing another is the only sensible operation.
+		if memberID == user.ID {
+			s.logger.WarnContext(r.Context(), "admin attempted to change their own admin status",
+				slog.Int64("actor_id", user.ID),
+				slog.String("action", action))
+			s.renderError(w, http.StatusBadRequest)
+			return
+		}
+
+		grant := action == "set_admin"
+		if err := s.queries.SetMemberAdmin(r.Context(), SetMemberAdminParams{
+			ID:      memberID,
+			IsAdmin: grant,
+		}); err != nil {
+			s.logger.ErrorContext(r.Context(), "failed to set member admin",
+				slog.Int64("memberID", memberID),
+				slog.Bool("is_admin", grant),
+				slog.String("error", err.Error()))
+			s.renderError(w, http.StatusInternalServerError)
+			return
+		}
+
+		// Admin changes are the highest-privilege action on the board, so log
+		// actor and target unconditionally at info level.
+		s.logger.InfoContext(r.Context(), "member admin status changed",
+			slog.Int64("actor_id", user.ID),
+			slog.Int64("member_id", memberID),
+			slog.Bool("is_admin", grant))
+
+		http.Redirect(w, r, "/admin", http.StatusSeeOther)
+		return
 	case "delete_thread":
 		// TODO: Implement DeleteThread query
 		s.logger.InfoContext(r.Context(), "DeleteThread not implemented", slog.Int64("threadID", threadID))
@@ -256,7 +392,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	span.AddEvent("GetUser(r)")
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.DebugContext(r.Context(), "CreateThread", slog.String("user_hash", middleware.HashEmail(user.Email)), slog.String("user_id", strconv.FormatInt(user.ID, 10)))
+		s.logger.DebugContext(r.Context(), "CreateThread: failed to get user", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
@@ -349,7 +485,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.DebugContext(r.Context(), "CreateThreadPost", slog.String("user_hash", middleware.HashEmail(user.Email)), slog.Int64("user_id", user.ID))
+		s.logger.DebugContext(r.Context(), "CreateThreadPost: failed to get user", slog.String("error", err.Error()))
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
@@ -828,33 +964,6 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (s *DiscussService) GetTailscaleUserEmail(r *http.Request) (string, error) {
-	// Handle development mode
-	if s.devMode {
-		return "dev@example.com", nil
-	}
-
-	remoteAddr, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to split remote address: %w", err)
-	}
-
-	// Check if the IP is local and handle accordingly
-	if remoteAddr == "127.0.0.1" || remoteAddr == "::1" {
-		// For local requests, try to get the real client IP from headers
-		if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-			remoteAddr = forwardedFor
-		}
-	}
-
-	whois, err := s.tailClient.WhoIs(r.Context(), remoteAddr)
-	if err != nil {
-		return "", fmt.Errorf("failed to get tailscale user info: %w", err)
-	}
-
-	return whois.UserProfile.LoginName, nil
-}
-
 // ListThreads handles listing all threads.
 func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	ctx, span := s.telemetry.Tracer.Start(r.Context(), "ListThreads")
@@ -977,7 +1086,10 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	for _, post := range posts {
 		threadPosts = append(threadPosts, ThreadPostTemplateData{
 			ID:       post.ID,
-			Body:     template.HTML(post.Body.String),
+			// Body is sanitized with bluemonday (bodyPolicy) on write, so the
+			// stored value is safe to render as HTML here.
+			// nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
+			Body: template.HTML(post.Body.String),
 			ThreadID: post.ThreadID,
 			MemberID: post.MemberID,
 			Email:    post.Email,
@@ -1105,9 +1217,11 @@ func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request)
 		"GitSha":         s.gitSha,
 		"User":           user,
 		"SubjectExample": subjectExample,
-		"HeartEmoji":     template.HTML(heartEmoji),
-		"ThumbsUpEmoji":  template.HTML(thumbsUpEmoji),
-		"SmileEmoji":     template.HTML(smileEmoji),
+		// Emoji values come from bluemonday-sanitized markdown of hardcoded
+		// literals, so they are safe to render as HTML.
+		"HeartEmoji":    template.HTML(heartEmoji),    // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
+		"ThumbsUpEmoji": template.HTML(thumbsUpEmoji), // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
+		"SmileEmoji":    template.HTML(smileEmoji),    // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
 	})
 }
 

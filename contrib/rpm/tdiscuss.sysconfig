@@ -9,6 +9,8 @@ DATABASE_URL=postgres://tdiscuss:changeme@localhost/tdiscuss?sslmode=disable
 
 # Options passed to tdiscuss binary
 # Add --otlp to enable OTLP export instead of Prometheus metrics
+# Add -allow-shared-nodes to let users on nodes shared in from another
+# tailnet join the board (rejected by default)
 OPTIONS="-otlp -data-location=/var/lib/tdiscuss"
 
 # OpenTelemetry Configuration

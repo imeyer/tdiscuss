@@ -32,23 +32,31 @@ var templateFiles embed.FS
 var staticFiles embed.FS
 
 var (
-	hostname            = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss-dev"), "Hostname to use on your tailnet")
-	dataDir             = flag.String("data-location", dataLocation(), "Configuration data location.")
-	debug               = flag.Bool("debug", false, "Enable debug logging")
-	tsnetLog            = flag.Bool("tsnet-log", false, "Enable tsnet logging (warning: VERY verbose)")
-	otlpMode            = flag.Bool("otlp", false, "Enable OTLP metrics output, IYKYK")
-	showVersion         = flag.Bool("version", false, "Print version and exit")
-	version  string     = "dev"
-	gitSha   string     = "no-commit"
-	logLevel slog.Level = slog.LevelInfo
+	hostname                    = flag.String("hostname", envOr("TSNET_HOSTNAME", "discuss-dev"), "Hostname to use on your tailnet")
+	dataDir                     = flag.String("data-location", dataLocation(), "Configuration data location.")
+	debug                       = flag.Bool("debug", false, "Enable debug logging")
+	tsnetLog                    = flag.Bool("tsnet-log", false, "Enable tsnet logging (warning: VERY verbose)")
+	otlpMode                    = flag.Bool("otlp", false, "Enable OTLP metrics output, IYKYK")
+	showVersion                 = flag.Bool("version", false, "Print version and exit")
+	allowSharedNodes            = flag.Bool("allow-shared-nodes", false, "Allow members whose node was shared in from another tailnet")
+	version          string     = "dev"
+	gitSha           string     = "no-commit"
+	logLevel         slog.Level = slog.LevelInfo
 )
 
+// main is a thin wrapper around run so that every deferred cleanup in run -
+// closing tsnet, the database pool, and the telemetry exporters - has actually
+// finished before the process exits with a signal-derived code.
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("tdiscuss %s (%s)\n", version, gitSha)
-		os.Exit(0)
+		return 0
 	}
 
 	hostinfo.SetApp("tdiscuss")
@@ -106,11 +114,17 @@ func main() {
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {
 		logger.Error("failed to connect to database", slog.String("error", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 	defer dbconn.Close()
 
-	s := setupTsNetServer(logger)
+	s, err := setupTsNetServer(logger)
+	if err != nil {
+		logger.Error("failed to set up tsnet server", slog.String("error", err.Error()))
+		return 1
+	}
+	// Closing tsnet flushes logtail and the state store, and lets control know
+	// the node is going away rather than waiting for it to time out.
 	defer s.Close()
 
 	tmpls := setupTemplates()
@@ -124,11 +138,15 @@ func main() {
 	upCancel()
 	if err != nil {
 		logger.Error("tailscale not ready", slog.String("error", err.Error()))
-		os.Exit(1)
+		return 1
 	}
 	logger.Info("tsnet running", slog.String("certDomains", fmt.Sprintf("%v", status.CertDomains)))
 
-	lc := getTailscaleLocalClient(s, logger)
+	lc, err := getTailscaleLocalClient(s)
+	if err != nil {
+		logger.Error("failed to create tailscale local client", slog.String("error", err.Error()))
+		return 1
+	}
 
 	queries := New(dbconn)
 	wrappedQueries := &QueriesWrapper{Queries: queries}
@@ -148,16 +166,28 @@ func main() {
 	)
 
 	mux := setupMux(dsvc)
+	debugMux := SetupDebugRoutes(dsvc)
 
 	serverPlain := createHTTPServer(mux)
 	serverTls := createHTTPSServer(mux)
+	serverDebug := createDebugServer(debugMux)
 
-	ln, tln := startListeners(s, logger)
+	ln, tln, dln, err := startListeners(s)
+	if err != nil {
+		logger.Error("failed to start listeners", slog.String("error", err.Error()))
+		return 1
+	}
 	defer ln.Close()
 	defer tln.Close()
+	defer dln.Close()
 
 	go startServer(serverPlain, ln, logger, "http", *hostname)
 	go startServer(serverTls, tln, logger, "https", expandSNIName(ctx, lc, logger))
+	go startServer(serverDebug, dln, logger, "http", *hostname+debugPort)
 
-	waitForShutdown(sigChan, ctx, logger, serverPlain, serverTls)
+	return waitForShutdown(sigChan, logger,
+		namedServer{name: "http", srv: serverPlain},
+		namedServer{name: "https", srv: serverTls},
+		namedServer{name: "debug", srv: serverDebug},
+	)
 }

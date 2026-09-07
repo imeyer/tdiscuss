@@ -9,23 +9,38 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"tailscale.com/client/tailscale/apitype"
+	"tailscale.com/tailcfg"
 )
 
 // Mock implementations for testing
 type mockTailscaleClient struct {
-	email string
-	err   error
+	email  string
+	tags   []string
+	sharer tailcfg.UserID
+	capMap tailcfg.PeerCapMap
+	noNode bool
+	err    error
 }
 
-func (m *mockTailscaleClient) WhoIs(ctx context.Context, remoteAddr string) (*WhoIsResponse, error) {
+func (m *mockTailscaleClient) WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &WhoIsResponse{
-		UserProfile: &UserProfile{
+	resp := &apitype.WhoIsResponse{
+		UserProfile: &tailcfg.UserProfile{
 			LoginName: m.email,
 		},
-	}, nil
+		CapMap: m.capMap,
+	}
+	if !m.noNode {
+		resp.Node = &tailcfg.Node{
+			Name:   "node.tailnet.ts.net.",
+			Tags:   m.tags,
+			Sharer: m.sharer,
+		}
+	}
+	return resp, nil
 }
 
 type mockQuerier struct {
@@ -90,7 +105,7 @@ func TestAuthMiddleware_BlockedUser(t *testing.T) {
 			}
 
 			// Create auth provider
-			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger())
+			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
 			// Create middleware
 			middleware := authMiddleware(provider, nil)
@@ -155,7 +170,7 @@ func TestAuthMiddleware_Errors(t *testing.T) {
 			}
 
 			// Create auth provider
-			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger())
+			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
 			// Create middleware
 			middleware := authMiddleware(provider, nil)
@@ -183,49 +198,145 @@ func TestAuthMiddleware_Errors(t *testing.T) {
 	}
 }
 
-func TestTailscaleAuthProvider_GetUserEmail(t *testing.T) {
+func TestTailscaleAuthProvider_ResolvePeer(t *testing.T) {
 	tests := []struct {
 		name          string
 		email         string
+		tags          []string
+		sharer        tailcfg.UserID
+		noNode        bool
+		config        TailscaleAuthConfig
 		err           error
-		expectedEmail string
-		expectedErr   bool
+		expectedLogin string
+		expectedErr   string
 	}{
 		{
-			name:          "successful email retrieval",
+			name:          "successful identity resolution",
 			email:         "user@example.com",
-			expectedEmail: "user@example.com",
-			expectedErr:   false,
+			expectedLogin: "user@example.com",
 		},
 		{
 			name:        "whois error",
 			err:         errors.New("network error"),
-			expectedErr: true,
+			expectedErr: "network error",
+		},
+		{
+			name:        "no user profile",
+			email:       "",
+			expectedErr: "no user profile",
+		},
+		{
+			// Without a node we cannot check for tags, so fail closed.
+			name:        "no node fails closed",
+			email:       "user@example.com",
+			noNode:      true,
+			expectedErr: "no node",
+		},
+		{
+			// A tagged node has no human owner: WhoIs reports a synthetic
+			// account shared by every tagged node in the tailnet, so it must
+			// never be auto-provisioned as a member.
+			name:        "tagged node rejected",
+			email:       "tagged-devices",
+			tags:        []string{"tag:ci"},
+			expectedErr: "is tagged",
+		},
+		{
+			name:        "tagged node rejected regardless of login name",
+			email:       "user@example.com",
+			tags:        []string{"tag:k8s-operator", "tag:prom"},
+			expectedErr: "is tagged",
+		},
+		{
+			name:        "shared node rejected by default",
+			email:       "outsider@other.example.com",
+			sharer:      tailcfg.UserID(42),
+			expectedErr: "shared in from another tailnet",
+		},
+		{
+			name:          "shared node allowed when configured",
+			email:         "outsider@other.example.com",
+			sharer:        tailcfg.UserID(42),
+			config:        TailscaleAuthConfig{AllowSharedNodes: true},
+			expectedLogin: "outsider@other.example.com",
+		},
+		{
+			// AllowSharedNodes must not weaken the tagged-node check.
+			name:        "shared and tagged node still rejected",
+			email:       "tagged-devices",
+			tags:        []string{"tag:ci"},
+			sharer:      tailcfg.UserID(42),
+			config:      TailscaleAuthConfig{AllowSharedNodes: true},
+			expectedErr: "is tagged",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := &mockTailscaleClient{
-				email: tt.email,
-				err:   tt.err,
+				email:  tt.email,
+				tags:   tt.tags,
+				sharer: tt.sharer,
+				noNode: tt.noNode,
+				err:    tt.err,
 			}
 
-			provider := newTailscaleAuthProvider(mockClient, nil, NewTestLogger())
+			provider := newTailscaleAuthProvider(mockClient, nil, NewTestLogger(), tt.config)
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
-			req.RemoteAddr = "127.0.0.1:12345"
+			req.RemoteAddr = "100.64.0.1:12345"
 
-			email, err := provider.GetUserEmail(req)
+			peer, err := provider.ResolvePeer(req)
 
-			if tt.expectedErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedEmail, email)
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+				assert.Nil(t, peer)
+				return
 			}
+
+			require.NoError(t, err)
+			require.NotNil(t, peer)
+			assert.Equal(t, tt.expectedLogin, peer.LoginName)
+			assert.Equal(t, "node.tailnet.ts.net", peer.NodeName)
+			assert.False(t, peer.IsTagged())
 		})
 	}
+}
+
+// TestAuthMiddleware_TaggedNodeUnauthorized covers the whole chain: a tagged
+// node must get a 401 and must never reach CreateOrReturnID, which would
+// auto-provision the synthetic tagged-devices account as a member.
+func TestAuthMiddleware_TaggedNodeUnauthorized(t *testing.T) {
+	mockClient := &mockTailscaleClient{
+		email: "tagged-devices",
+		tags:  []string{"tag:prom"},
+	}
+	mockQueries := &countingQuerier{}
+
+	provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
+	wrapped := authMiddleware(provider, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("handler must not be reached by a tagged node")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "100.64.0.2:12345"
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Zero(t, mockQueries.calls, "tagged node must not be provisioned as a member")
+}
+
+// countingQuerier records how many times a member lookup was attempted.
+type countingQuerier struct {
+	calls int
+}
+
+func (m *countingQuerier) CreateOrReturnID(ctx context.Context, email string) (CreateOrReturnIDRow, error) {
+	m.calls++
+	return CreateOrReturnIDRow{ID: 1}, nil
 }
 
 func TestTailscaleAuthProvider_CreateOrGetUser(t *testing.T) {
@@ -280,14 +391,14 @@ func TestTailscaleAuthProvider_CreateOrGetUser(t *testing.T) {
 				err:  tt.err,
 			}
 
-			provider := newTailscaleAuthProvider(nil, mockQueries, NewTestLogger())
+			provider := newTailscaleAuthProvider(nil, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
 			email := "test@example.com"
 			if tt.name == "blocked user" {
 				email = "blocked@example.com"
 			}
 
-			user, err := provider.CreateOrGetUser(context.Background(), email)
+			user, err := provider.CreateOrGetUser(context.Background(), &Peer{LoginName: email})
 
 			if tt.expectedErr {
 				assert.Error(t, err)

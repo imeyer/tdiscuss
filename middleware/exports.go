@@ -26,6 +26,10 @@ var (
 	// GetUser retrieves the authenticated user from context
 	GetUser = getUser
 
+	// GetPeer retrieves the authenticated tailnet identity from context,
+	// including its capability grants
+	GetPeer = getPeer
+
 	// GetRequestID retrieves the request ID from context
 	GetRequestID = getRequestID
 
@@ -88,9 +92,6 @@ var (
 	// RecoveryMiddleware recovers from panics
 	// RecoveryMiddleware = recoveryMiddleware // Note: recoveryMiddleware not found in codebase
 
-	// IPWhitelistMiddleware restricts access to specific IPs
-	IPWhitelistMiddleware = ipWhitelistMiddleware
-
 	// StaticFileMiddleware handles static file serving
 	StaticFileMiddleware = staticFileMiddleware
 )
@@ -121,8 +122,8 @@ func HashEmail(email string) string {
 }
 
 // NewTailscaleAuthProvider creates a new Tailscale auth provider
-func NewTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *slog.Logger) AuthProvider {
-	return newTailscaleAuthProvider(client, queries, logger)
+func NewTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *slog.Logger, config TailscaleAuthConfig) AuthProvider {
+	return newTailscaleAuthProvider(client, queries, logger, config)
 }
 
 // NewRateLimiter creates a new rate limiter

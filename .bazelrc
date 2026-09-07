@@ -1,5 +1,21 @@
 try-import .buildbuddy.bazelrc
-test --test_output=all --test_arg=-test.v
+
+# Reuse action results across `bazel clean` and branch switches.
+common --disk_cache=~/.cache/bazel-disk
+
+# Only show output for tests that actually failed. Use --config=verbose to get
+# the full per-subtest `go test -v` firehose when debugging one.
+test --test_output=errors
+
+test:verbose --test_output=all --test_arg=-test.v
+
+# Fail instead of silently regenerating MODULE.bazel.lock, and make CI logs
+# self-explanatory about which rc flags were in play.
+common:ci --lockfile_mode=error
+common:ci --announce_rc
+common:ci --color=yes
+common:ci --show_timestamps
+
 test:silent --ui_event_filters=+info,+error,+fail
 common:silent --noshow_progress
 common:silent --ui_event_filters=-info,+error,+fail

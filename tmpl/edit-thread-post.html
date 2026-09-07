@@ -4,6 +4,7 @@
 <h2>Editing thread...</h2>
 
 <div class="form-container">
+    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
     <form action="/thread/{{ .ThreadID }}/{{ .Post.ID }}/edit" method="POST">
         <div class="form-group">
             <label for="thread_body">body <a href="/formatting" class="form-help-link">formatting help</a></label>

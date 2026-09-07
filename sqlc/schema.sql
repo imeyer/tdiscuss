@@ -206,36 +206,23 @@ DECLARE
     v_id BIGINT;
     v_is_admin BOOLEAN;
     v_is_blocked BOOLEAN;
-    v_member_count INTEGER;
 BEGIN
+    -- New members get no privileges. Admin is granted either by a capability
+    -- grant in the tailnet policy file (see the README) or by setting
+    -- member.is_admin directly; it is never inferred from signup order.
     v_is_admin := false;
     v_is_blocked := false;
-
-    -- If there are no members, make this member an admin
-    SELECT count(member.id) INTO v_member_count
-    FROM member;
-
-    RAISE NOTICE 'initial v_member_count: %', v_member_count;
 
     -- Try to find the existing email
     SELECT member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked
     FROM member
     WHERE member.email = p_email;
 
-    RAISE NOTICE 'After SELECT: v_id = %, v_is_admin = %, v_is_blocked = %', v_id, v_is_admin, v_is_blocked;
-
-    IF v_member_count = 0 THEN
-        v_is_admin = true;
-    ELSE
-
-    END IF;
-
     -- If the email doesn't exist, create a new record
     IF v_id IS NULL THEN
         INSERT INTO member (email, is_admin, is_blocked)
-        VALUES (p_email, v_is_admin, v_is_blocked)
+        VALUES (p_email, false, false)
         RETURNING member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked;
-        RAISE NOTICE 'After INSERT: v_id = %, v_is_admin = %, v_is_blocked = %', v_id, v_is_admin, v_is_blocked;
 
         INSERT INTO member_profile (member_id)
         VALUES (v_id);

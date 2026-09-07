@@ -35,7 +35,7 @@ func (m *mockAuthProvider) Authenticate(ctx context.Context, r *http.Request) (*
 	return nil, nil
 }
 
-func (m *mockAuthProvider) CreateOrGetUser(ctx context.Context, email string) (*ContextUser, error) {
+func (m *mockAuthProvider) CreateOrGetUser(ctx context.Context, peer *Peer) (*ContextUser, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -44,19 +44,19 @@ func (m *mockAuthProvider) CreateOrGetUser(ctx context.Context, email string) (*
 	}
 	return &ContextUser{
 		ID:      1,
-		Email:   email,
+		Email:   peer.LoginName,
 		IsAdmin: false,
 	}, nil
 }
 
-func (m *mockAuthProvider) GetUserEmail(r *http.Request) (string, error) {
+func (m *mockAuthProvider) ResolvePeer(r *http.Request) (*Peer, error) {
 	if m.err != nil {
-		return "", m.err
+		return nil, m.err
 	}
 	if m.user != nil {
-		return m.user.Email, nil
+		return &Peer{LoginName: m.user.Email}, nil
 	}
-	return "test@example.com", nil
+	return &Peer{LoginName: "test@example.com"}, nil
 }
 
 func TestSecurityHeadersMiddleware(t *testing.T) {

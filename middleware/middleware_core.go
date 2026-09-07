@@ -68,7 +68,13 @@ const (
 
 // RequestContext holds all request-scoped data
 type RequestContext struct {
-	User      *ContextUser
+	User *ContextUser
+
+	// Peer is the tailnet identity the request was authenticated as. It
+	// carries the peer's capability grants, so authorization checks can read
+	// them without asking the LocalAPI again.
+	Peer *Peer
+
 	RequestID string
 	TraceID   string
 	StartTime time.Time
@@ -79,9 +85,18 @@ type RequestContext struct {
 
 // ContextUser holds user information in context
 type ContextUser struct {
-	ID        int64
-	Email     string
-	IsAdmin   bool
+	ID    int64
+	Email string
+
+	// IsAdmin is the effective admin status: the union of the member's
+	// is_admin column and any admin role granted by the tailnet policy file.
+	IsAdmin bool
+
+	// IsAdminByGrant records that the tailnet policy file granted the admin
+	// role, so logs and the admin page can say where the privilege came from.
+	// Revoking admin means clearing whichever sources are set.
+	IsAdminByGrant bool
+
 	IsBlocked bool
 }
 
@@ -133,6 +148,15 @@ func getUser(ctx context.Context) (*ContextUser, bool) {
 		return nil, false
 	}
 	return rc.User, true
+}
+
+// getPeer returns the tailnet identity the request was authenticated as.
+func getPeer(ctx context.Context) (*Peer, bool) {
+	rc, ok := getRequestContext(ctx)
+	if !ok || rc.Peer == nil {
+		return nil, false
+	}
+	return rc.Peer, true
 }
 
 func getRequestID(ctx context.Context) string {

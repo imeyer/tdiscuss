@@ -1,9 +1,12 @@
+# gazelle:prefix github.com/imeyer/tdiscuss/middleware
+
 load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "middleware",
     srcs = [
         "board_data.go",
+        "capabilities.go",
         "exports.go",
         "interfaces.go",
         "middleware_auth.go",
@@ -17,19 +20,22 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_google_uuid//:uuid",
-        "@io_opentelemetry_go_otel//:otel",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//tailcfg",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel//codes",
+        "@io_opentelemetry_go_otel//semconv/v1.21.0:v1_21_0",
         "@io_opentelemetry_go_otel_metric//:metric",
         "@io_opentelemetry_go_otel_trace//:trace",
-        "@io_opentelemetry_go_otel//semconv/v1.21.0:v1_21_0",
         "@org_golang_x_time//rate",
     ],
 )
 
 go_test(
     name = "middleware_test",
+    size = "small",
     srcs = [
+        "capabilities_test.go",
         "middleware_auth_test.go",
         "middleware_integration_test.go",
         "middleware_test.go",
@@ -39,6 +45,8 @@ go_test(
     deps = [
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@com_tailscale//client/tailscale/apitype",
+        "@com_tailscale//tailcfg",
         "@io_opentelemetry_go_otel_metric//noop",
         "@io_opentelemetry_go_otel_trace//noop",
     ],

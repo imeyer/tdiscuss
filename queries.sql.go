@@ -11,17 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const blockMember = `-- name: BlockMember :exec
-UPDATE member SET
-  is_blocked = true
-WHERE id = $1
-`
-
-func (q *Queries) BlockMember(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, blockMember, id)
-	return err
-}
-
 const createOrReturnID = `-- name: CreateOrReturnID :one
 SELECT id::bigint, is_admin::boolean, is_blocked::boolean FROM createOrReturnID($1)
 `
@@ -268,6 +257,17 @@ func (q *Queries) GetThreadSubjectById(ctx context.Context, id int64) (string, e
 	return subject, err
 }
 
+const isMemberAdmin = `-- name: IsMemberAdmin :one
+SELECT COALESCE(is_admin, false)::boolean FROM member WHERE id = $1
+`
+
+func (q *Queries) IsMemberAdmin(ctx context.Context, id int64) (bool, error) {
+	row := q.db.QueryRow(ctx, isMemberAdmin, id)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const listMemberThreads = `-- name: ListMemberThreads :many
 SELECT
   t.id as thread_id,
@@ -346,6 +346,57 @@ func (q *Queries) ListMemberThreads(ctx context.Context, memberID int64) ([]List
 			&i.Dot,
 			&i.Sticky,
 			&i.Locked,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMembers = `-- name: ListMembers :many
+SELECT
+  m.id,
+  m.email,
+  COALESCE(m.is_admin, false)::boolean AS is_admin,
+  COALESCE(m.is_blocked, false)::boolean AS is_blocked,
+  m.date_joined,
+  COALESCE(m.total_thread_posts, 0)::int AS total_thread_posts
+FROM
+  member m
+ORDER BY
+  COALESCE(m.is_admin, false) DESC,
+  m.email ASC
+`
+
+type ListMembersRow struct {
+	ID               int64
+	Email            string
+	IsAdmin          bool
+	IsBlocked        bool
+	DateJoined       pgtype.Timestamptz
+	TotalThreadPosts int32
+}
+
+func (q *Queries) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
+	rows, err := q.db.Query(ctx, listMembers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListMembersRow
+	for rows.Next() {
+		var i ListMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.IsAdmin,
+			&i.IsBlocked,
+			&i.DateJoined,
+			&i.TotalThreadPosts,
 		); err != nil {
 			return nil, err
 		}
@@ -526,6 +577,38 @@ func (q *Queries) ListThreads(ctx context.Context, arg ListThreadsParams) ([]Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const setMemberAdmin = `-- name: SetMemberAdmin :exec
+UPDATE member SET
+  is_admin = $1::boolean
+WHERE id = $2
+`
+
+type SetMemberAdminParams struct {
+	IsAdmin bool
+	ID      int64
+}
+
+func (q *Queries) SetMemberAdmin(ctx context.Context, arg SetMemberAdminParams) error {
+	_, err := q.db.Exec(ctx, setMemberAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setMemberBlocked = `-- name: SetMemberBlocked :exec
+UPDATE member SET
+  is_blocked = $1::boolean
+WHERE id = $2
+`
+
+type SetMemberBlockedParams struct {
+	IsBlocked bool
+	ID        int64
+}
+
+func (q *Queries) SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error {
+	_, err := q.db.Exec(ctx, setMemberBlocked, arg.IsBlocked, arg.ID)
+	return err
 }
 
 const updateBoardEditWindow = `-- name: UpdateBoardEditWindow :exec

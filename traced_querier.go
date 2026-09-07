@@ -556,13 +556,66 @@ func (t *TracedQueriesWrapper) UpdateThreadPost(ctx context.Context, arg UpdateT
 	return nil
 }
 
-// BlockMember implements the Querier interface with tracing
-func (t *TracedQueriesWrapper) BlockMember(ctx context.Context, id int64) error {
-	ctx, span := t.telemetry.Tracer.Start(ctx, "BlockMember(query)")
+// IsMemberAdmin implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) IsMemberAdmin(ctx context.Context, id int64) (bool, error) {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "IsMemberAdmin(query)")
 	defer span.End()
 
 	start := time.Now()
-	err := t.wrapped.BlockMember(ctx, id)
+	isAdmin, err := t.wrapped.IsMemberAdmin(ctx, id)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return isAdmin, fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("member.id", id),
+		attribute.Bool("member.is_admin", isAdmin),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "IsMemberAdmin", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return isAdmin, nil
+}
+
+// ListMembers implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) ListMembers(ctx context.Context) ([]ListMembersRow, error) {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "ListMembers(query)")
+	defer span.End()
+
+	start := time.Now()
+	rows, err := t.wrapped.ListMembers(ctx)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return rows, fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int("result.count", len(rows)),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "ListMembers", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return rows, nil
+}
+
+// SetMemberAdmin implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) SetMemberAdmin(ctx context.Context, arg SetMemberAdminParams) error {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "SetMemberAdmin(query)")
+	defer span.End()
+
+	start := time.Now()
+	err := t.wrapped.SetMemberAdmin(ctx, arg)
 	duration := time.Since(start).Seconds()
 
 	if err != nil {
@@ -572,11 +625,39 @@ func (t *TracedQueriesWrapper) BlockMember(ctx context.Context, id int64) error 
 	}
 
 	span.SetAttributes(
-		attribute.Int64("member.id", id),
+		attribute.Int64("member.id", arg.ID),
+		attribute.Bool("member.is_admin", arg.IsAdmin),
 		attribute.Float64("request.duration", duration),
 	)
 
-	t.recordMetrics(ctx, "BlockMember", duration)
+	t.recordMetrics(ctx, "SetMemberAdmin", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return nil
+}
+
+// SetMemberBlocked implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "SetMemberBlocked(query)")
+	defer span.End()
+
+	start := time.Now()
+	err := t.wrapped.SetMemberBlocked(ctx, arg)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("member.id", arg.ID),
+		attribute.Bool("member.is_blocked", arg.IsBlocked),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "SetMemberBlocked", duration)
 	span.SetStatus(codes.Ok, "")
 
 	return nil

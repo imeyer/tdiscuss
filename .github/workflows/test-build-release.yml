@@ -25,13 +25,14 @@ jobs:
           # /private/var/tmp/_bazel_<user> on macOS.
           path: |
             ${{ runner.os == 'macOS' && '/private/var/tmp/_bazel_runner' || '~/.cache/bazel' }}
-          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel') }}
+            ~/.cache/bazel-disk
+          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'MODULE.bazel.lock') }}
           restore-keys: |
             ${{ runner.os }}-bazel-
       - name: Go version check
         run: make check-go-versions
       - name: Test //...
-        run: bazelisk test --build_tests_only --workspace_status_command="${PWD}/status.sh" //...
+        run: bazelisk test --config=ci --build_tests_only --workspace_status_command="${PWD}/status.sh" //...
 
   Build:
     needs: Test
@@ -56,12 +57,13 @@ jobs:
           # /private/var/tmp/_bazel_<user> on macOS.
           path: |
             ${{ runner.os == 'macOS' && '/private/var/tmp/_bazel_runner' || '~/.cache/bazel' }}
-          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel') }}
+            ~/.cache/bazel-disk
+          key: ${{ runner.os }}-bazel-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'MODULE.bazel.lock') }}
           restore-keys: |
             ${{ runner.os }}-bazel-
       - name: Build //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
         run: |
-          bazelisk build --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
+          bazelisk build --config=ci --stamp --workspace_status_command="${PWD}/status.sh" //:tdiscuss-${{ matrix.goos }}-${{ matrix.goarch }}
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -78,11 +80,13 @@ jobs:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     - name: Set pre-release flag
       id: release_type
+      env:
+        REF: ${{ github.ref }}
       run: |
-        if [[ ${{ github.ref }} == *beta* ]]; then
-          echo "type=pre-release" >> $GITHUB_OUTPUT
+        if [[ "$REF" == *beta* ]]; then
+          echo "type=pre-release" >> "$GITHUB_OUTPUT"
         else
-          echo "type=release" >> $GITHUB_OUTPUT
+          echo "type=release" >> "$GITHUB_OUTPUT"
         fi
     - name: Download artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

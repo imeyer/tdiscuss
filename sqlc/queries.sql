@@ -206,7 +206,29 @@ WHERE id = $2
   AND member_id = $3
   AND date_posted >= NOW() - INTERVAL '900 seconds';
 
--- name: BlockMember :exec
+-- name: IsMemberAdmin :one
+SELECT COALESCE(is_admin, false)::boolean FROM member WHERE id = $1;
+
+-- name: SetMemberBlocked :exec
 UPDATE member SET
-  is_blocked = true
-WHERE id = $1;
+  is_blocked = sqlc.arg(is_blocked)::boolean
+WHERE id = sqlc.arg(id);
+
+-- name: ListMembers :many
+SELECT
+  m.id,
+  m.email,
+  COALESCE(m.is_admin, false)::boolean AS is_admin,
+  COALESCE(m.is_blocked, false)::boolean AS is_blocked,
+  m.date_joined,
+  COALESCE(m.total_thread_posts, 0)::int AS total_thread_posts
+FROM
+  member m
+ORDER BY
+  COALESCE(m.is_admin, false) DESC,
+  m.email ASC;
+
+-- name: SetMemberAdmin :exec
+UPDATE member SET
+  is_admin = sqlc.arg(is_admin)::boolean
+WHERE id = sqlc.arg(id);

@@ -35,9 +35,17 @@ type ExtendedQuerier interface {
 
 // Types
 type User struct {
-	ID        int64
-	Email     string
-	IsAdmin   bool
+	ID    int64
+	Email string
+
+	// IsAdmin is the effective admin status: the member's is_admin column
+	// unioned with any admin role granted by the tailnet policy file.
+	IsAdmin bool
+
+	// IsAdminByGrant reports that the tailnet policy file granted admin, so
+	// the UI can distinguish it from the database column.
+	IsAdminByGrant bool
+
 	IsBlocked bool
 }
 
@@ -72,6 +80,19 @@ func createHTTPSServer(mux http.Handler) *http.Server {
 	}
 }
 
+// createDebugServer builds the server for the debug listener, which carries
+// the metrics endpoint. It is deliberately a separate listener on a separate
+// port (see startListeners) so that access is enforced by tailnet ACLs rather
+// than by anything this process decides about the peer.
+func createDebugServer(mux http.Handler) *http.Server {
+	return &http.Server{
+		Handler:      mux,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+}
+
 // DiscussService holds all the dependencies for the service
 type DiscussService struct {
 	tailClient TailscaleClient
@@ -79,7 +100,6 @@ type DiscussService struct {
 	dbconn     *pgxpool.Pool
 	queries    Querier
 	tmpls      *template.Template
-	devMode    bool
 	hostname   string
 	version    string
 	gitSha     string
@@ -104,7 +124,6 @@ func NewDiscussService(
 		dbconn:     dbconn,
 		queries:    queries,
 		tmpls:      tmpls,
-		devMode:    false,
 		hostname:   hostname,
 		version:    version,
 		gitSha:     gitSha,
@@ -131,11 +150,9 @@ func setupMux(dsvc *DiscussService) http.Handler {
 	return SetupRoutes(dsvc, staticFiles)
 }
 
-func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
-	err := createConfigDir(*dataDir)
-	if err != nil {
-		logger.Error("error creating config directory", slog.String("error", err.Error()))
-		os.Exit(1)
+func setupTsNetServer(logger *slog.Logger) (*tsnet.Server, error) {
+	if err := createConfigDir(*dataDir); err != nil {
+		return nil, fmt.Errorf("creating config directory: %w", err)
 	}
 
 	s := NewTsNetServer(logger)
@@ -161,23 +178,45 @@ func setupTsNetServer(logger *slog.Logger) *tsnet.Server {
 	// 	log.Fatal(http.Serve(ln443, mux))
 	// }()
 
-	return s
+	return s, nil
 }
 
-func startListeners(s *tsnet.Server, logger *slog.Logger) (net.Listener, net.Listener) {
-	ln, err := s.Listen("tcp", ":80")
-	if err != nil {
-		logger.Error("error creating non-TLS listener", slog.String("error", err.Error()))
-		os.Exit(1)
+// debugPort carries the metrics endpoint. It is separate from the application
+// ports so that tailnet ACLs decide who may scrape it, e.g.:
+//
+//	{"action": "accept", "src": ["tag:prom"], "dst": ["discuss:9090"]}
+const debugPort = ":9090"
+
+// startListeners opens the tailnet listeners. Every listener is a tsnet
+// listener, so a connection's RemoteAddr is always a WireGuard-authenticated
+// tailnet address.
+func startListeners(s *tsnet.Server) (ln, tln, dln net.Listener, err error) {
+	defer func() {
+		if err == nil {
+			return
+		}
+		// Don't leak the listeners we did manage to open.
+		for _, l := range []net.Listener{ln, tln, dln} {
+			if l != nil {
+				l.Close()
+			}
+		}
+		ln, tln, dln = nil, nil, nil
+	}()
+
+	if ln, err = s.Listen("tcp", ":80"); err != nil {
+		return ln, tln, dln, fmt.Errorf("creating non-TLS listener: %w", err)
 	}
 
-	tln, err := s.ListenTLS("tcp", ":443")
-	if err != nil {
-		logger.Error("error creating TLS listener", slog.String("error", err.Error()))
-		os.Exit(1)
+	if tln, err = s.ListenTLS("tcp", ":443"); err != nil {
+		return ln, tln, dln, fmt.Errorf("creating TLS listener: %w", err)
 	}
 
-	return ln, tln
+	if dln, err = s.Listen("tcp", debugPort); err != nil {
+		return ln, tln, dln, fmt.Errorf("creating debug listener: %w", err)
+	}
+
+	return ln, tln, dln, nil
 }
 
 func startServer(server *http.Server, ln net.Listener, logger *slog.Logger, scheme, hostname string) {
@@ -187,77 +226,68 @@ func startServer(server *http.Server, ln net.Listener, logger *slog.Logger, sche
 	}
 }
 
-func waitForShutdown(sigChan chan os.Signal, ctx context.Context, logger *slog.Logger, serverPlain, serverTls *http.Server) {
+// namedServer pairs a server with the label used in shutdown logging.
+type namedServer struct {
+	name string
+	srv  *http.Server
+}
+
+// waitForShutdown blocks until a shutdown signal arrives, drains the servers,
+// and returns the exit code the process should use.
+//
+// It deliberately does not call os.Exit: main still has deferred cleanup to
+// run - closing tsnet (which flushes logtail and the state store), the
+// database pool, and the telemetry exporters - and exiting here would skip
+// all of it.
+func waitForShutdown(sigChan chan os.Signal, logger *slog.Logger, servers ...namedServer) int {
 	sig := <-sigChan
-	sigName := sig.String()
 	logger.Info("received shutdown signal, initiating graceful shutdown",
-		slog.String("signal", sigName))
+		slog.String("signal", sig.String()))
+
+	exitCode := 0
+	if sigNum, ok := sig.(syscall.Signal); ok {
+		exitCode = 128 + int(sigNum)
+	}
 
 	// Set up graceful shutdown with generous timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// Track shutdown completion
-	serversDone := make(chan struct{}, 2)
+	serversDone := make(chan struct{}, len(servers))
+	for _, ns := range servers {
+		go func(ns namedServer) {
+			defer func() { serversDone <- struct{}{} }()
+			logger.Info("shutting down server", slog.String("server", ns.name))
+			if err := ns.srv.Shutdown(shutdownCtx); err != nil {
+				logger.Error("failed to gracefully shutdown server",
+					slog.String("server", ns.name),
+					slog.String("error", err.Error()))
+				return
+			}
+			logger.Info("server shutdown complete", slog.String("server", ns.name))
+		}(ns)
+	}
 
-	// Shutdown HTTP server
-	go func() {
-		defer func() { serversDone <- struct{}{} }()
-		logger.Info("shutting down HTTP server")
-		if err := serverPlain.Shutdown(shutdownCtx); err != nil {
-			logger.Error("failed to gracefully shutdown HTTP server",
-				slog.String("error", err.Error()))
-		} else {
-			logger.Info("HTTP server shutdown complete")
-		}
-	}()
-
-	// Shutdown HTTPS server
-	go func() {
-		defer func() { serversDone <- struct{}{} }()
-		logger.Info("shutting down HTTPS server")
-		if err := serverTls.Shutdown(shutdownCtx); err != nil {
-			logger.Error("failed to gracefully shutdown HTTPS server",
-				slog.String("error", err.Error()))
-		} else {
-			logger.Info("HTTPS server shutdown complete")
-		}
-	}()
-
-	// Wait for both servers to shutdown or timeout
-	serversShutdown := 0
-	shutdownComplete := false
-
-	for !shutdownComplete {
+	for done := 0; done < len(servers); {
 		select {
 		case <-serversDone:
-			serversShutdown++
-			if serversShutdown >= 2 {
-				shutdownComplete = true
-				logger.Info("all servers shutdown successfully")
-			}
+			done++
 		case <-shutdownCtx.Done():
-			shutdownComplete = true
-			logger.Warn("shutdown timeout reached, forcing exit")
+			logger.Warn("shutdown timeout reached, abandoning remaining servers")
+			return exitCode
 		case sig := <-sigChan:
 			// Handle repeated signals
 			logger.Warn("received additional signal during shutdown",
 				slog.String("signal", sig.String()))
 			if sig == syscall.SIGTERM || sig == syscall.SIGQUIT {
-				logger.Error("forcing immediate shutdown due to repeated signal")
-				os.Exit(130) // 128 + SIGINT
+				logger.Error("abandoning graceful shutdown due to repeated signal")
+				return 130 // 128 + SIGINT
 			}
 		}
 	}
 
-	logger.Info("graceful shutdown complete")
+	logger.Info("all servers shutdown successfully")
+	logger.Debug("exiting", slog.Int("exit_code", exitCode))
 
-	// Exit with appropriate code
-	if sigNum, ok := sig.(syscall.Signal); ok {
-		exitCode := 128 + int(sigNum)
-		logger.Debug("exiting with signal-based exit code", slog.Int("exit_code", exitCode))
-		os.Exit(exitCode)
-	}
-
-	os.Exit(0)
+	return exitCode
 }

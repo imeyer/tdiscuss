@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -13,8 +15,23 @@ import (
 
 // AuthProvider handles authentication logic
 type AuthProvider interface {
-	GetUserEmail(r *http.Request) (string, error)
-	CreateOrGetUser(ctx context.Context, email string) (*ContextUser, error)
+	// ResolvePeer resolves the identity behind a request, and returns an
+	// error if the peer has no identity this board can use.
+	ResolvePeer(r *http.Request) (*Peer, error)
+
+	// CreateOrGetUser creates or retrieves the member record for a peer.
+	CreateOrGetUser(ctx context.Context, peer *Peer) (*ContextUser, error)
+}
+
+// TailscaleAuthConfig is the identity policy for TailscaleAuthProvider.
+type TailscaleAuthConfig struct {
+	// AllowSharedNodes permits requests from nodes shared into this tailnet
+	// from another one.
+	//
+	// It is off by default. Such a peer's login name is issued by a foreign
+	// tailnet's identity provider, its owner is not a member of this tailnet,
+	// and accepting it silently enrolls an outsider as a board member.
+	AllowSharedNodes bool
 }
 
 // TailscaleAuthProvider implements AuthProvider for Tailscale
@@ -22,43 +39,96 @@ type TailscaleAuthProvider struct {
 	client  TailscaleClient
 	queries Querier
 	logger  *slog.Logger
+	config  TailscaleAuthConfig
 }
 
 // newTailscaleAuthProvider creates a new Tailscale auth provider
-func newTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *slog.Logger) *TailscaleAuthProvider {
+func newTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *slog.Logger, config TailscaleAuthConfig) *TailscaleAuthProvider {
 	return &TailscaleAuthProvider{
 		client:  client,
 		queries: queries,
 		logger:  logger,
+		config:  config,
 	}
 }
 
-// GetUserEmail gets the user's email from Tailscale
-func (p *TailscaleAuthProvider) GetUserEmail(r *http.Request) (string, error) {
+// ResolvePeer resolves the tailnet identity behind the request.
+//
+// r.RemoteAddr is the peer's WireGuard-authenticated tailnet address, since
+// every listener is a tsnet listener. It is the only trustworthy thing about
+// the request, so it - and never a header - is what we hand to WhoIs.
+func (p *TailscaleAuthProvider) ResolvePeer(r *http.Request) (*Peer, error) {
 	who, err := p.client.WhoIs(r.Context(), r.RemoteAddr)
 	if err != nil {
-		return "", fmt.Errorf("failed to get WhoIs: %w", err)
+		return nil, fmt.Errorf("failed to get WhoIs: %w", err)
+	}
+	if who == nil {
+		return nil, errors.New("empty WhoIs response")
 	}
 
-	if who.UserProfile == nil || who.UserProfile.LoginName == "" {
-		return "", fmt.Errorf("no user profile in WhoIs response")
+	// The node is what carries the ACL tags, so without it we cannot tell
+	// whether this peer has a human owner at all. A successful WhoIs always
+	// reports one; fail closed if we somehow get a response that doesn't.
+	if who.Node == nil {
+		return nil, errors.New("WhoIs response has no node")
 	}
 
-	return who.UserProfile.LoginName, nil
+	peer := peerFromWhoIs(who)
+
+	// A tagged node has no human owner. WhoIs resolves the owner of the node,
+	// and for a tagged node the control plane substitutes a synthetic account
+	// that is identical for every tagged node in the tailnet - so accepting
+	// one would file all of them under a single shared member, and on an
+	// empty board would hand that shared member admin (see createOrReturnID).
+	// The tags are the reliable signal here, not the synthetic login name.
+	if peer.IsTagged() {
+		return nil, fmt.Errorf("node %q is tagged (%s) and has no user identity",
+			peer.NodeName, strings.Join(peer.Tags, ","))
+	}
+
+	if peer.Shared && !p.config.AllowSharedNodes {
+		return nil, fmt.Errorf("node %q is shared in from another tailnet", peer.NodeName)
+	}
+
+	if peer.LoginName == "" {
+		return nil, errors.New("no user profile in WhoIs response")
+	}
+
+	return peer, nil
 }
 
-// CreateOrGetUser creates or retrieves a user from the database
-func (p *TailscaleAuthProvider) CreateOrGetUser(ctx context.Context, email string) (*ContextUser, error) {
-	user, err := p.queries.CreateOrReturnID(ctx, email)
+// CreateOrGetUser creates or retrieves a user from the database and resolves
+// the member's effective admin status.
+//
+// Admin is the union of two sources: the member's is_admin column and an admin
+// role granted by the tailnet policy file (see BoardCapability). The union is
+// deliberate - it lets grants be adopted without stranding an existing
+// database admin - but it means revoking admin requires clearing every source
+// that grants it.
+func (p *TailscaleAuthProvider) CreateOrGetUser(ctx context.Context, peer *Peer) (*ContextUser, error) {
+	user, err := p.queries.CreateOrReturnID(ctx, peer.LoginName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create or get user: %w", err)
 	}
 
+	// A malformed grant grants nothing. Failing the request instead would let
+	// one policy-file typo take the whole board down.
+	grantedAdmin, err := peerGrantsAdmin(peer)
+	if err != nil {
+		p.logger.WarnContext(ctx, "ignoring malformed board capability grant",
+			slog.String("error", err.Error()),
+			slog.String("node", peer.NodeName),
+			slog.String("email_hash", HashEmail(peer.LoginName)),
+		)
+		grantedAdmin = false
+	}
+
 	return &ContextUser{
-		ID:        user.ID,
-		Email:     email,
-		IsAdmin:   user.IsAdmin,
-		IsBlocked: user.IsBlocked,
+		ID:             user.ID,
+		Email:          peer.LoginName,
+		IsAdmin:        user.IsAdmin || grantedAdmin,
+		IsAdminByGrant: grantedAdmin,
+		IsBlocked:      user.IsBlocked,
 	}, nil
 }
 
@@ -79,8 +149,8 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				defer span.End()
 			}
 
-			// Get user email
-			email, err := provider.GetUserEmail(r)
+			// Resolve the peer's tailnet identity
+			peer, err := provider.ResolvePeer(r)
 			if err != nil {
 				logger := getLogger(ctx)
 				logger.WarnContext(ctx, "authentication failed",
@@ -98,12 +168,13 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 			}
 
 			// Get or create user
-			user, err := provider.CreateOrGetUser(ctx, email)
+			user, err := provider.CreateOrGetUser(ctx, peer)
 			if err != nil {
 				logger := getLogger(ctx)
 				logger.ErrorContext(ctx, "failed to create or get user",
 					slog.String("error", err.Error()),
-					slog.String("email_hash", HashEmail(email)),
+					slog.String("email_hash", HashEmail(peer.LoginName)),
+					slog.String("node", peer.NodeName),
 				)
 
 				if span := trace.SpanFromContext(ctx); span.IsRecording() {
@@ -120,7 +191,8 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				logger := getLogger(ctx)
 				logger.WarnContext(ctx, "blocked user attempted access",
 					slog.Int64("user_id", user.ID),
-					slog.String("email_hash", HashEmail(email)),
+					slog.String("email_hash", HashEmail(peer.LoginName)),
+					slog.String("node", peer.NodeName),
 				)
 
 				if span := trace.SpanFromContext(ctx); span.IsRecording() {
@@ -135,15 +207,18 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				return
 			}
 
-			// Add user to context
+			// Add user and peer to context. The peer is kept so that handlers
+			// can read capability grants without a second WhoIs round trip.
 			rc := getOrCreateRequestContext(ctx)
 			rc.User = user
+			rc.Peer = peer
 
 			// Add attributes to span
 			if span := trace.SpanFromContext(ctx); span.IsRecording() {
 				span.SetAttributes(
 					attribute.Int64("user.id", user.ID),
 					attribute.Bool("user.is_admin", user.IsAdmin),
+					attribute.Bool("user.is_admin_by_grant", user.IsAdminByGrant),
 				)
 			}
 
@@ -152,6 +227,8 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 			logger.DebugContext(ctx, "user authenticated",
 				slog.Int64("user_id", user.ID),
 				slog.Bool("is_admin", user.IsAdmin),
+				slog.Bool("is_admin_by_grant", user.IsAdminByGrant),
+				slog.String("node", peer.NodeName),
 			)
 
 			next.ServeHTTP(w, r)

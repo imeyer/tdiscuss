@@ -15,10 +15,17 @@ import (
 
 // SetupRoutes configures all HTTP routes with their appropriate middleware chains
 func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
-	// Create auth provider with adapters
-	tailscaleAdapter := NewTailscaleClientAdapter(dsvc.tailClient)
+	// Create auth provider. dsvc.tailClient satisfies middleware.TailscaleClient
+	// directly, so the full WhoIs response reaches the auth code intact.
 	querierAdapter := NewQuerierAdapter(dsvc.queries)
-	authProvider := middleware.NewTailscaleAuthProvider(tailscaleAdapter, querierAdapter, dsvc.logger)
+	authProvider := middleware.NewTailscaleAuthProvider(
+		dsvc.tailClient,
+		querierAdapter,
+		dsvc.logger,
+		middleware.TailscaleAuthConfig{
+			AllowSharedNodes: *allowSharedNodes,
+		},
+	)
 
 	// Create middleware setup with converted telemetry config
 	telemetryConfig := ConvertTelemetryConfig(dsvc.telemetry)
@@ -130,15 +137,37 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	)
 	mux.Handle("GET /health", healthChain.ThenFunc(dsvc.HealthCheck))
 
-	// Metrics endpoint
-	metricsChain := middleware.NewChain(
-		middleware.RequestContextMiddleware(),
-		// No auth required for metrics, but you might want to add IP whitelist
-		middleware.When(middleware.HasPathPrefix("/_/metrics"), middleware.IPWhitelistMiddleware([]string{"127.0.0.1", "::1"})),
-	)
-	mux.Handle("GET /_/metrics", metricsChain.Then(promhttp.Handler()))
+	// Note: the metrics endpoint is not on this mux. It is served on its own
+	// tailnet listener by SetupDebugRoutes, so that tailnet ACLs decide who
+	// can read it.
 
 	// Add global panic recovery as the outermost middleware
+	globalChain := middleware.NewChain(
+		RecoveryMiddleware(dsvc.logger),
+	)
+
+	return globalChain.Then(mux)
+}
+
+// SetupDebugRoutes configures the handler for the debug listener, which serves
+// the Prometheus metrics endpoint.
+//
+// This mux is served on its own tailnet port (debugPort) rather than alongside
+// the application routes. Access is therefore governed by the tailnet policy
+// file, which is the only place that can actually make the decision: an
+// in-process IP allowlist cannot, because on a tsnet listener every peer is a
+// tailnet address and none of them are loopback.
+func SetupDebugRoutes(dsvc *DiscussService) http.Handler {
+	mux := http.NewServeMux()
+
+	debugChain := middleware.NewChain(
+		middleware.RequestContextMiddleware(),
+		middleware.LoggingMiddleware(dsvc.logger),
+	)
+
+	mux.Handle("GET /_/metrics", debugChain.Then(promhttp.Handler()))
+	mux.Handle("GET /health", debugChain.ThenFunc(dsvc.HealthCheck))
+
 	globalChain := middleware.NewChain(
 		RecoveryMiddleware(dsvc.logger),
 	)
@@ -211,7 +240,10 @@ func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 						w.Header().Set("Content-Type", "text/html; charset=utf-8")
 						w.WriteHeader(http.StatusInternalServerError)
 
+						// errorHTML is a static template populated only with an
+						// internally generated error ID (no user input).
 						errorHTML := generateErrorHTML(errorID)
+						// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 						w.Write([]byte(errorHTML))
 					} else {
 						// Response already started, log this fact

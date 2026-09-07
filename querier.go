@@ -11,7 +11,6 @@ import (
 )
 
 type Querier interface {
-	BlockMember(ctx context.Context, id int64) error
 	CreateOrReturnID(ctx context.Context, pEmail string) (CreateOrReturnIDRow, error)
 	CreateThread(ctx context.Context, arg CreateThreadParams) error
 	CreateThreadPost(ctx context.Context, arg CreateThreadPostParams) error
@@ -23,9 +22,13 @@ type Querier interface {
 	GetThreadPostSequenceId(ctx context.Context) (int64, error)
 	GetThreadSequenceId(ctx context.Context) (int64, error)
 	GetThreadSubjectById(ctx context.Context, id int64) (string, error)
+	IsMemberAdmin(ctx context.Context, id int64) (bool, error)
 	ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
+	ListMembers(ctx context.Context) ([]ListMembersRow, error)
 	ListThreadPosts(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
 	ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
+	SetMemberAdmin(ctx context.Context, arg SetMemberAdminParams) error
+	SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error
 	UpdateBoardEditWindow(ctx context.Context, editWindow pgtype.Int4) error
 	UpdateBoardTitle(ctx context.Context, title string) error
 	UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error

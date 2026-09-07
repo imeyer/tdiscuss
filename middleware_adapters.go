@@ -8,34 +8,11 @@ import (
 	"github.com/imeyer/tdiscuss/middleware"
 )
 
-// TailscaleClientAdapter adapts the actual Tailscale client to the middleware interface
-type TailscaleClientAdapter struct {
-	client TailscaleClient
-}
-
-// NewTailscaleClientAdapter creates a new adapter
-func NewTailscaleClientAdapter(client TailscaleClient) *TailscaleClientAdapter {
-	return &TailscaleClientAdapter{client: client}
-}
-
-// WhoIs implements the middleware.TailscaleClient interface
-func (a *TailscaleClientAdapter) WhoIs(ctx context.Context, remoteAddr string) (*middleware.WhoIsResponse, error) {
-	resp, err := a.client.WhoIs(ctx, remoteAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert the actual response to the middleware interface
-	if resp.UserProfile == nil {
-		return &middleware.WhoIsResponse{}, nil
-	}
-
-	return &middleware.WhoIsResponse{
-		UserProfile: &middleware.UserProfile{
-			LoginName: resp.UserProfile.LoginName,
-		},
-	}, nil
-}
+// Note: there is no adapter for the Tailscale client. middleware.TailscaleClient
+// takes the LocalAPI response type directly, so TailscaleClient satisfies it as
+// is. The adapter that used to live here narrowed the WhoIs response to a login
+// name, which discarded the node and its capability grants - and with them any
+// way for the auth code to tell a person from a tagged machine.
 
 // QuerierAdapter adapts the actual database querier to the middleware interface
 type QuerierAdapter struct {
@@ -98,10 +75,11 @@ func GetUser(r *http.Request) (User, error) {
 	}
 
 	return User{
-		ID:        user.ID,
-		Email:     user.Email,
-		IsAdmin:   user.IsAdmin,
-		IsBlocked: user.IsBlocked,
+		ID:             user.ID,
+		Email:          user.Email,
+		IsAdmin:        user.IsAdmin,
+		IsAdminByGrant: user.IsAdminByGrant,
+		IsBlocked:      user.IsBlocked,
 	}, nil
 }
 

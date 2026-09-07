@@ -15,18 +15,10 @@ import (
 	"tailscale.com/tsnet"
 )
 
+// createConfigDir creates the data directory. The tsnet state directory
+// underneath it (see NewTsNetServer) is created by tsnet itself, with 0700.
 func createConfigDir(dir string) error {
-	err := os.MkdirAll(dir, 0o700)
-	if err != nil {
-		return err
-	}
-
-	err = os.MkdirAll(filepath.Join(dir, "tsnet"), 0o700)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return os.MkdirAll(dir, 0o700)
 }
 
 func dataLocation() string {
@@ -60,14 +52,18 @@ func formatTimestamp(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func getTailscaleLocalClient(s *tsnet.Server, logger *slog.Logger) TailscaleClient {
+// getTailscaleLocalClient returns the LocalAPI client for the tsnet node.
+//
+// It returns an error rather than a nil client: every request path depends on
+// this client for WhoIs, so a nil one only defers the failure to the first
+// caller that dereferences it.
+func getTailscaleLocalClient(s *tsnet.Server) (TailscaleClient, error) {
 	lc, err := s.LocalClient()
 	if err != nil {
-		logger.Error("error creating s.LocalClient()")
-		return nil
+		return nil, fmt.Errorf("creating tsnet LocalClient: %w", err)
 	}
 
-	return lc
+	return lc, nil
 }
 
 func newLogger(output io.Writer, logLevel *slog.Level) *slog.Logger {
@@ -136,8 +132,5 @@ func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, err
 func setupTemplates() *template.Template {
 	return template.Must(template.New("any").Funcs(template.FuncMap{
 		"formatTimestamp": formatTimestamp,
-		"safeHTML": func(s string) template.HTML {
-			return template.HTML(s)
-		},
 	}).ParseFS(templateFiles, "tmpl/*html"))
 }

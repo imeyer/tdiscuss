@@ -27,7 +27,7 @@ TARGET := tdiscuss
 BAZEL := bazelisk
 BAZEL_BUILD_ARGS := build --config=silent --workspace_status_command="$${PWD}/status.sh"
 BAZEL_RELEASE_ARGS := build --config=silent --stamp --workspace_status_command="$${PWD}/status.sh"
-BAZEL_TEST_ARGS := test --config=silent --build_tests_only --test_output=errors
+BAZEL_TEST_ARGS := test --config=silent --build_tests_only
 BAZEL_RUN_ARGS := run
 # Change the hostname to anything you wish to use for testing
 BAZEL_RUN_TRAILING_ARGS := -hostname discuss-dev -debug

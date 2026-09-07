@@ -139,6 +139,30 @@ Or if connecting remotely:
 psql "postgresql://tdiscuss@localhost:5432/tdiscuss" -f sqlc/schema.sql
 ```
 
+`schema.sql` is for a fresh database — it is not re-runnable against one that
+already has tables. Changes to an existing database ship as standalone files in
+`sqlc/`, applied the same way:
+
+```bash
+psql -U tdiscuss -d tdiscuss -f sqlc/remove_auto_admin_bootstrap.sql
+```
+
+| File | What it does |
+| ---- | ------------ |
+| `add_is_blocked_to_member.sql` | Adds `member.is_blocked` for blocking members instead of deleting them |
+| `remove_auto_admin_bootstrap.sql` | Stops promoting the first member to sign in to admin, and drops per-request `RAISE NOTICE` logging. Safe on a live database, safe to apply more than once, and existing admins are unaffected. Grant admin with a [capability grant](README.md#admin-access) instead. |
+
+### New members and admin
+
+New members are created with no privileges. Admin comes from a capability
+grant in your tailnet policy file, or from setting the column directly:
+
+```sql
+UPDATE member SET is_admin = true WHERE email = 'you@example.com';
+```
+
+See [Admin access](README.md#admin-access) for the recommended setup.
+
 ## Connection String
 
 tdiscuss uses the `DATABASE_URL` environment variable for database configuration formatted as a standard PostgreSQL connection URI:

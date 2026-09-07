@@ -1495,3 +1495,32 @@ pre.code-block code,
     color: var(--link-color);
     text-decoration: underline;
 }
+
+/* Admin page: member management */
+.admin-note {
+    color: var(--text-color-muted);
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin: 0.5rem 1.5rem 1rem;
+    max-width: 60rem;
+}
+
+.member-tag {
+    background-color: var(--accent-color-subtle);
+    border-radius: var(--border-radius-small);
+    color: var(--text-color-secondary);
+    font-size: 0.75rem;
+    margin-left: 0.375rem;
+    padding: 0.0625rem 0.375rem;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.inline-form {
+    display: inline-block;
+    margin: 0 0.25rem 0 0;
+}
+
+.member-action-disabled {
+    color: var(--text-color-muted);
+}

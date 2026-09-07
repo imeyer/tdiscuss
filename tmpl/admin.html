@@ -22,6 +22,7 @@
 <h3>Board configuration</h3>
 
 <div class="form-container">
+    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
     <form action="/admin" method="POST">
         <input type="hidden" name="action" value="update_config">
         <div class="form-group">
@@ -37,6 +38,85 @@
         </div>
     </form>
 </div>
+
+<h3>Members</h3>
+
+<p class="admin-note">
+    Admin can also be granted by a capability grant in your tailnet policy
+    file. Grants are not listed here and cannot be revoked from this page:
+    they are delivered per-request to the member who holds them, so the board
+    only ever sees the grants of whoever is currently signed in. A member shown
+    below as not an admin may still be one by grant.
+</p>
+
+<p class="admin-note">
+    Blocking is board state only, so unlike admin it is fully controlled from
+    this page. A blocked member is refused on every route regardless of any
+    grant they hold.
+</p>
+
+<table class="member-admin-table">
+    <thead>
+        <tr>
+            <th>Member</th>
+            <th>Joined</th>
+            <th>Posts</th>
+            <th>Admin</th>
+            <th>Blocked</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+    {{ range .Members }}
+        <tr>
+            <td><a href="/member/{{ .MemberID }}">{{ .MemberEmail }}</a>
+                {{ if .IsSelf }}<span class="member-tag">you</span>{{ end }}
+            </td>
+            <td>{{ .DateJoined.Time | formatTimestamp }}</td>
+            <td>{{ .PostCount }}</td>
+            <td>{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
+            <td>{{ if .IsBlocked }}yes{{ else }}no{{ end }}</td>
+            <td>
+            {{ if .IsSelf }}
+                <span class="member-action-disabled" title="You cannot change your own admin or blocked status">&mdash;</span>
+            {{ else }}
+                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+                <form action="/admin" method="POST" class="inline-form">
+                    {{ if .IsAdmin }}
+                    <input type="hidden" name="action" value="unset_admin">
+                    <input type="hidden" name="member_id" value="{{ .MemberID }}">
+                    <button type="submit">Remove admin</button>
+                    {{ else }}
+                    <input type="hidden" name="action" value="set_admin">
+                    <input type="hidden" name="member_id" value="{{ .MemberID }}">
+                    <button type="submit">Make admin</button>
+                    {{ end }}
+                </form>
+                {{ if .IsBlocked }}
+                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+                <form action="/admin" method="POST" class="inline-form">
+                    <input type="hidden" name="action" value="unblock_member">
+                    <input type="hidden" name="member_id" value="{{ .MemberID }}">
+                    <button type="submit">Unblock</button>
+                </form>
+                {{ else if .IsAdmin }}
+                <span class="member-action-disabled" title="Remove admin before blocking this member">cannot block an admin</span>
+                {{ else }}
+                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+                <form action="/admin" method="POST" class="inline-form">
+                    <input type="hidden" name="action" value="block_member">
+                    <input type="hidden" name="member_id" value="{{ .MemberID }}">
+                    <button type="submit">Block</button>
+                </form>
+                {{ end }}
+            {{ end }}
+            </td>
+        </tr>
+    {{ else }}
+        <tr><td colspan="6">No members yet.</td></tr>
+    {{ end }}
+    </tbody>
+</table>
 
 <a href="/">Back to board</a>
 

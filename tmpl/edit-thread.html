@@ -4,6 +4,7 @@
 <h2>Editing thread...</h2>
 
 <div class="form-container">
+    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
     <form action="/thread/{{ .Thread.ThreadID }}/edit" method="POST">
         <input type="hidden" name="thread_post_id" value="{{ .Thread.ThreadPostID }}">
         <div class="form-group">

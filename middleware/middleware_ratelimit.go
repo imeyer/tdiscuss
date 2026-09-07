@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -282,26 +283,22 @@ func (rl *RateLimiter) cleanupVisitors() {
 
 // Helper functions
 
+// getClientIP returns the address of the peer that made the request.
+//
+// Requests only ever arrive over a tsnet listener, so r.RemoteAddr is the
+// peer's WireGuard-authenticated tailnet address and there is no proxy in
+// front of us. X-Forwarded-For and X-Real-IP are therefore attacker-controlled
+// and must never be consulted here: a peer that could set them would choose
+// its own rate-limit bucket and forge the address we log.
 func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// Take the first IP in the list
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
+	if ap, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
+		return ap.Addr().String()
 	}
-
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+	// Not host:port. Accept a bare address (some tests set RemoteAddr this
+	// way) rather than string-mangling a value we failed to parse.
+	if addr, err := netip.ParseAddr(r.RemoteAddr); err == nil {
+		return addr.String()
 	}
-
-	// Fall back to RemoteAddr
-	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
-		return r.RemoteAddr[:idx]
-	}
-
 	return r.RemoteAddr
 }
 
@@ -328,30 +325,4 @@ func getVisitorType(key string) string {
 		return "ip"
 	}
 	return "global"
-}
-
-// ipWhitelistMiddleware allows certain IPs to bypass rate limiting
-func ipWhitelistMiddleware(whitelist []string) Middleware {
-	// Convert to map for O(1) lookup
-	whitelistMap := make(map[string]bool)
-	for _, ip := range whitelist {
-		whitelistMap[ip] = true
-	}
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientIP := getClientIP(r)
-
-			if whitelistMap[clientIP] {
-				// Add header to indicate whitelisted
-				w.Header().Set("X-RateLimit-Whitelisted", "true")
-
-				// Skip rate limiting by calling next directly
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			next.ServeHTTP(w, r)
-		})
-	}
 }
