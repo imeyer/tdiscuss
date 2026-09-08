@@ -1,27 +1,22 @@
 {{ template "header" . }}
 
 {{ if .Post }}
-<h2>Editing thread...</h2>
+<h1 class="page-title">Editing post #{{ .Post.ID }}</h1>
 
-<div class="form-container">
-    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
-    <form action="/thread/{{ .ThreadID }}/{{ .Post.ID }}/edit" method="POST">
-        <div class="form-group">
-            <label for="thread_body">body <a href="/formatting" class="form-help-link">formatting help</a></label>
-            <textarea id="thread_body" name="thread_body" rows="10" cols="75"
-                required>{{ .Post.Body.String }}</textarea>
-        </div>
-        <div class="form-group">
-            <button type="submit">Update it!</button>
-        </div>
-    </form>
-</div>
+<!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+<form action="/thread/{{ .ThreadID }}/{{ .Post.ID }}/edit" method="POST">
+    <div class="form-group">
+        <label for="thread_body">body <a href="/formatting" class="form-help-link">formatting help</a></label>
+        <textarea id="thread_body" name="thread_body" rows="10" required>{{ .Post.Body.String }}</textarea>
+    </div>
+    <div class="form-group">
+        <button type="submit">Update it!</button>
+    </div>
+</form>
 
-<a href="/thread/{{ .ThreadID }}">Back to thread</a>
-</div>
-</div>
+<a href="/thread/{{ .ThreadID }}" class="back-link">Back to thread</a>
 {{ else }}
-<h2>Post not found</h2>
+<h1 class="page-title">Post not found</h1>
 {{ end }}
 
 {{ template "footer" . }}

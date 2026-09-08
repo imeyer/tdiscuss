@@ -1,8 +1,8 @@
 {{ template "header" . }}
 
-{{ template "menu" . }}
+<h1 class="page-title">Board administration</h1>
 
-<h3>Board statistics</h3>
+<h2 class="section-title">Statistics</h2>
 
 <div class="board-stats">
     <div class="board-stats-item">
@@ -19,27 +19,25 @@
     </div>
 </div>
 
-<h3>Board configuration</h3>
+<h2 class="section-title">Configuration</h2>
 
-<div class="form-container">
-    <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
-    <form action="/admin" method="POST">
-        <input type="hidden" name="action" value="update_config">
-        <div class="form-group">
-            <label for="board_title">Board Title</label>
-            <input type="text" id="board_title" size="50px" name="board_title" value="{{ .BoardData.Title }}">
-        </div>
-        <div class="form-group">
-            <label for="edit_window">Edit window (in seconds)</label>
-            <input type="text" id="location" size="50px" name="edit_window" value="{{ .BoardData.EditWindow.Int32 }}">
-        </div>
-        <div class="form-group">
-            <button type="submit">Update config</button>
-        </div>
-    </form>
-</div>
+<!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+<form action="/admin" method="POST">
+    <input type="hidden" name="action" value="update_config">
+    <div class="form-group">
+        <label for="board_title">Board Title</label>
+        <input type="text" id="board_title" name="board_title" value="{{ .BoardData.Title }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_window">Edit window (in seconds)</label>
+        <input type="text" id="edit_window" name="edit_window" value="{{ .BoardData.EditWindow.Int32 }}">
+    </div>
+    <div class="form-group">
+        <button type="submit">Update config</button>
+    </div>
+</form>
 
-<h3>Members</h3>
+<h2 class="section-title">Members</h2>
 
 <p class="admin-note">
     Admin can also be granted by a capability grant in your tailnet policy
@@ -77,6 +75,7 @@
             <td>{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
             <td>{{ if .IsBlocked }}yes{{ else }}no{{ end }}</td>
             <td>
+            <div class="member-actions">
             {{ if .IsSelf }}
                 <span class="member-action-disabled" title="You cannot change your own admin or blocked status">&mdash;</span>
             {{ else }}
@@ -110,6 +109,7 @@
                 </form>
                 {{ end }}
             {{ end }}
+            </div>
             </td>
         </tr>
     {{ else }}
@@ -118,6 +118,6 @@
     </tbody>
 </table>
 
-<a href="/">Back to board</a>
+<a href="/" class="back-link">Back to board</a>
 
 {{ template "footer" . }}

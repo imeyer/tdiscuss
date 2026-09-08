@@ -1,6 +1,6 @@
 {{define "header"}}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <title>{{ .Title }}</title>
@@ -12,7 +12,16 @@
 
 <body>
     <div id="container">
-        <div id="header">
-            <h1>{{ .Title }}</h1>
-        </div>
+        <header id="header">
+            <div class="header-bar">
+                <h1 class="board-title"><a href="/">{{ .Title }}</a></h1>
+                <div class="theme-switcher">
+                    <button class="theme-btn" data-theme="auto" title="Match system" aria-label="Match system theme">🌓</button>
+                    <button class="theme-btn" data-theme="soft-rose" title="Soft Rose" aria-label="Soft Rose theme">🌸</button>
+                    <button class="theme-btn" data-theme="twilight-sakura" title="Twilight Sakura" aria-label="Twilight Sakura theme">🌙</button>
+                </div>
+            </div>
+            {{ template "menu" . }}
+        </header>
+        <main id="main">
     {{end}}

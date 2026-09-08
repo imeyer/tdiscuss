@@ -1,15 +1,11 @@
 {{ define "menu" }}
-<div id="menu">
+<nav id="menu">
     <a href="/">index</a>
     <a href="/thread/new">new thread</a>
     <a href="/member/edit">edit profile</a>
+    <a href="/formatting">formatting</a>
     {{ if .User.IsAdmin }}
     <a href="/admin" class="admin-link">admin</a>
     {{ end }}
-    <div class="theme-switcher">
-        <button class="theme-btn" data-theme="auto" title="Auto">🌓</button>
-        <button class="theme-btn" data-theme="soft-rose" title="Soft Rose">🌸</button>
-        <button class="theme-btn" data-theme="twilight-sakura" title="Twilight Sakura">🌙</button>
-    </div>
-</div>
+</nav>
 {{ end }}

@@ -1,5 +1,9 @@
 {{ template "header" . }}
 
-{{ .Error }}
+<h1 class="page-title">Something went wrong</h1>
+
+<p class="text-secondary">{{ .Error }}</p>
+
+<a href="/" class="back-link">Back to board</a>
 
 {{ template "footer" . }}

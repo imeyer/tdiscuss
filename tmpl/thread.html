@@ -1,35 +1,34 @@
 {{ template "header" . }}
 
-{{ template "menu" . }}
-
-<span class="subject">{{ .Subject }}</span>
+<h1 class="subject">{{ .Subject }}</h1>
 
 {{ range .ThreadPosts }}
-<div class="threadpost-bubble" id="post-{{ .ID }}">
+<article class="threadpost-bubble" id="post-{{ .ID }}">
     <div class="threadpost-header">
-        On {{ .DatePosted.Time | formatTimestamp}}, <a href="/member/{{ .MemberID.Int64 }}">{{ .Email.String }}</a>
-        posted | <a href="#post-{{ .ID }}" class="permalink">#{{ .ID }}</a>
+        <span>
+            <a href="/member/{{ .MemberID.Int64 }}">{{ .Email.String }}</a>
+            on {{ .DatePosted.Time | formatTimestamp }}
+        </span>
+        <span class="threadpost-actions">
+            {{ if .CanEdit.Bool }}<a href="/thread/{{ .ThreadID.Int64 }}/{{ .ID }}/edit">edit</a>{{ end }}
+            <a href="#post-{{ .ID }}" class="permalink">#{{ .ID }}</a>
+        </span>
     </div>
     <div class="threadpost-body">
-        {{ if .CanEdit.Bool }}
-        <a href="/thread/{{ .ThreadID.Int64 }}/{{ .ID }}/edit">Edit</a>
-        {{ end }}
         {{ .Body }}
     </div>
-</div>
+</article>
 {{ end }}
-<p>
-<div class="form-container">
-    <form action="/thread/{{ .ID }}" method="POST">
-        <div class="form-group">
-            <label for="thread_body">reply... <a href="/formatting" class="form-help-link">formatting help</a></label>
-            <textarea id="thread_body" name="thread_body" rows="10" cols="75" required></textarea>
-        </div>
-        <div class="form-group">
-            <button type="submit">Post it!</button>
-        </div>
-    </form>
-</div>
-</p>
+
+<!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
+<form action="/thread/{{ .ID }}" method="POST">
+    <div class="form-group">
+        <label for="thread_body">reply <a href="/formatting" class="form-help-link">formatting help</a></label>
+        <textarea id="thread_body" name="thread_body" rows="10" required></textarea>
+    </div>
+    <div class="form-group">
+        <button type="submit">Post it!</button>
+    </div>
+</form>
 
 {{ template "footer" . }}
