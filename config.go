@@ -26,14 +26,13 @@ func LoadConfig() (*Config, error) {
 		LogDebug:          false,
 		ServiceName:       "tdiscuss",
 		TraceMaxBatchSize: 512,
-		TraceSampleRate:   1.0, // Sample 25%
+		TraceSampleRate:   1.0,
 		OTLP:              false,
 	}
 
 	return config, nil
 }
 
-// PoolConfig function with error handling
 func PoolConfig(dsn *string, logger *slog.Logger) (*pgxpool.Config, error) {
 	const defaultMaxConns = int32(4)
 	const defaultMinConns = int32(0)

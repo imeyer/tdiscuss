@@ -124,7 +124,6 @@ func (rc *RequestContext) Get(key string) (interface{}, bool) {
 	return val, ok
 }
 
-// Context management functions
 func withRequestContext(ctx context.Context, rc *RequestContext) context.Context {
 	return context.WithValue(ctx, contextKeyRequestID, rc)
 }
@@ -141,7 +140,6 @@ func getOrCreateRequestContext(ctx context.Context) *RequestContext {
 	return newRequestContext()
 }
 
-// Helper functions for common context operations
 func getUser(ctx context.Context) (*ContextUser, bool) {
 	rc, ok := getRequestContext(ctx)
 	if !ok || rc.User == nil {
@@ -175,7 +173,6 @@ func getTraceID(ctx context.Context) string {
 	return rc.TraceID
 }
 
-// Conditional middleware helpers
 func when(condition func(*http.Request) bool, middleware Middleware) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +189,6 @@ func unless(condition func(*http.Request) bool, middleware Middleware) Middlewar
 	return when(func(r *http.Request) bool { return !condition(r) }, middleware)
 }
 
-// Common condition functions
 func isAuthenticated(r *http.Request) bool {
 	user, ok := getUser(r.Context())
 	return ok && user != nil

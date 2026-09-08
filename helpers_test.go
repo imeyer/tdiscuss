@@ -36,7 +36,6 @@ func TestSetupDatabase_NoDatabaseURL(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Unset DATABASE_URL
 	os.Setenv("DATABASE_URL", "")
 
 	dbconn, err := setupDatabase(ctx, logger)
@@ -58,10 +57,8 @@ func TestSetupDatabase_PoolConfigError(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Set DATABASE_URL to some value
 	os.Setenv("DATABASE_URL", "lol")
 
-	// Override PoolConfigFunc to return an error
 	originalPoolConfigFunc := PoolConfigFunc
 	defer func() { PoolConfigFunc = originalPoolConfigFunc }()
 
@@ -88,10 +85,8 @@ func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	// Set DATABASE_URL to some value
 	os.Setenv("DATABASE_URL", "postgres://user:pass@localhost/dbname")
 
-	// Override PoolConfigFunc to return a valid config
 	originalPoolConfigFunc := PoolConfigFunc
 	defer func() { PoolConfigFunc = originalPoolConfigFunc }()
 
@@ -99,7 +94,6 @@ func TestSetupDatabase_NewWithConfigFails(t *testing.T) {
 		return &pgxpool.Config{}, nil
 	}
 
-	// Override NewWithConfigFunc to return an error
 	originalNewWithConfigFunc := NewWithConfigFunc
 	defer func() { NewWithConfigFunc = originalNewWithConfigFunc }()
 
@@ -164,18 +158,15 @@ func TestCreateConfigDirTwo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup the test case
 			tt.setup()
 
 			defer os.RemoveAll(tt.dir)
 
-			// Attempt to create the directory
 			err := createConfigDir(tt.dir)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("os.MkdirAll() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			// Check permissions if no error is expected
 			if !tt.wantErr {
 				info, err := os.Stat(tt.dir)
 				if err != nil {
@@ -185,7 +176,6 @@ func TestCreateConfigDirTwo(t *testing.T) {
 				}
 			}
 
-			// Clean up
 			os.RemoveAll(tt.dir)
 		})
 	}
@@ -227,10 +217,8 @@ func TestExpandSNIName(t *testing.T) {
 			}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-			// Temporarily set the hostname variable
 			hostname = &tt.hostname
 
-			// Capture log output
 			var logOutput io.Writer
 			if tt.expectedLog != "" {
 				logOutput = &bytes.Buffer{}
@@ -278,22 +266,18 @@ func TestEnvOr(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set up the environment variable
 			if tt.envValue != "" {
 				os.Setenv(tt.envKey, tt.envValue)
 			} else {
 				os.Unsetenv(tt.envKey)
 			}
 
-			// Call the function
 			result := envOr(tt.envKey, tt.defaultVal)
 
-			// Check the result
 			if result != tt.expected {
 				t.Errorf("envOr() = %v, want %v", result, tt.expected)
 			}
 
-			// Clean up the environment variable
 			os.Unsetenv(tt.envKey)
 		})
 	}
@@ -421,18 +405,14 @@ func TestSetupLogger(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Temporarily set the debug variable
 			debug = &tt.debug
 
-			// Capture log output
 			var buf bytes.Buffer
 
 			logger := newLogger(&buf, &tt.expectedLevel)
 
-			// Perform the log function
 			tt.logFunc(logger)
 
-			// Check the log output
 			if tt.expectMsg != "" && !strings.Contains(buf.String(), tt.expectMsg) {
 				t.Errorf("Expected log output to contain '%s', got %v", tt.expectMsg, buf.String())
 			} else if tt.expectMsg == "" && buf.Len() != 0 {

@@ -138,7 +138,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			// Start span for auth
 			if tracer != nil {
 				var span trace.Span
 				ctx, span = tracer.Start(ctx, "auth.middleware",
@@ -149,7 +148,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				defer span.End()
 			}
 
-			// Resolve the peer's tailnet identity
 			peer, err := provider.ResolvePeer(r)
 			if err != nil {
 				logger := getLogger(ctx)
@@ -167,7 +165,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				return
 			}
 
-			// Get or create user
 			user, err := provider.CreateOrGetUser(ctx, peer)
 			if err != nil {
 				logger := getLogger(ctx)
@@ -186,7 +183,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				return
 			}
 
-			// Check if user is blocked
 			if user.IsBlocked {
 				logger := getLogger(ctx)
 				logger.WarnContext(ctx, "blocked user attempted access",
@@ -202,7 +198,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 					)
 				}
 
-				// Return 404 as requested
 				http.NotFound(w, r)
 				return
 			}
@@ -213,7 +208,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 			rc.User = user
 			rc.Peer = peer
 
-			// Add attributes to span
 			if span := trace.SpanFromContext(ctx); span.IsRecording() {
 				span.SetAttributes(
 					attribute.Int64("user.id", user.ID),
@@ -222,7 +216,6 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 				)
 			}
 
-			// Log successful auth
 			logger := getLogger(ctx)
 			logger.DebugContext(ctx, "user authenticated",
 				slog.Int64("user_id", user.ID),
@@ -275,21 +268,17 @@ func requireAdminMiddleware() Middleware {
 func userEnrichmentMiddleware() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get user from context
 			user, ok := getUser(r.Context())
 			if ok && user != nil {
-				// Add user info to logger
 				logger := getLogger(r.Context())
 				enrichedLogger := logger.With(
 					slog.Int64("user_id", user.ID),
 					slog.Bool("is_admin", user.IsAdmin),
 				)
 
-				// Update logger in context
 				ctx := context.WithValue(r.Context(), contextKey("logger"), enrichedLogger)
 				r = r.WithContext(ctx)
 
-				// Add user info to response headers (for debugging)
 				if isDebugMode() {
 					w.Header().Set("X-User-ID", fmt.Sprintf("%d", user.ID))
 					w.Header().Set("X-User-Admin", fmt.Sprintf("%t", user.IsAdmin))

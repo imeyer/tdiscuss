@@ -36,7 +36,6 @@ func NewRateLimiter(requestsPerSecond float64, burst int, logger *slog.Logger) *
 		logger:   logger,
 	}
 
-	// Start cleanup goroutine to remove old visitors
 	go rl.cleanupVisitors()
 
 	return rl
@@ -80,7 +79,6 @@ func (rl *RateLimiter) cleanupVisitors() {
 // RateLimitMiddleware creates a middleware that enforces rate limits
 func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context
 		user, err := GetUser(r)
 		if err != nil {
 			// If no user context, fall back to IP-based limiting
@@ -95,7 +93,6 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 				return
 			}
 		} else {
-			// User-based rate limiting
 			userID := fmt.Sprintf("user:%d", user.ID)
 			limiter := rl.getVisitor(userID)
 
@@ -108,7 +105,6 @@ func (rl *RateLimiter) RateLimitMiddleware(next http.Handler) http.Handler {
 			}
 		}
 
-		// Add rate limit headers
 		w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", float64(rl.burst)))
 		w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", time.Now().Add(time.Second).Unix()))
 
@@ -138,7 +134,6 @@ func (erl *EndpointRateLimiter) AddEndpoint(pattern string, requestsPerSecond fl
 // Middleware returns a middleware that applies endpoint-specific rate limits
 func (erl *EndpointRateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check for endpoint-specific rate limiter
 		for pattern, limiter := range erl.limiters {
 			if matched, _ := path.Match(pattern, r.URL.Path); matched {
 				limiter.RateLimitMiddleware(next).ServeHTTP(w, r)
@@ -168,7 +163,6 @@ func (rl *RateLimiter) WaitRateLimitMiddleware(timeout time.Duration) func(http.
 
 			limiter := rl.getVisitor(userID)
 
-			// Wait for permission with timeout
 			err = limiter.Wait(ctx)
 			if err != nil {
 				rl.logger.WarnContext(r.Context(), "rate limit wait timeout",

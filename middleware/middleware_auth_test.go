@@ -13,7 +13,6 @@ import (
 	"tailscale.com/tailcfg"
 )
 
-// Mock implementations for testing
 type mockTailscaleClient struct {
 	email  string
 	tags   []string
@@ -96,7 +95,6 @@ func TestAuthMiddleware_BlockedUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mocks
 			mockClient := &mockTailscaleClient{
 				email: "test@example.com",
 			}
@@ -104,30 +102,23 @@ func TestAuthMiddleware_BlockedUser(t *testing.T) {
 				user: tt.user,
 			}
 
-			// Create auth provider
 			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
-			// Create middleware
 			middleware := authMiddleware(provider, nil)
 
-			// Create test handler
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("success"))
 			})
 
-			// Wrap handler with middleware
 			wrapped := middleware(handler)
 
-			// Create request and recorder
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = "127.0.0.1:12345"
 			rec := httptest.NewRecorder()
 
-			// Execute request
 			wrapped.ServeHTTP(rec, req)
 
-			// Assert response
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 			assert.Equal(t, tt.expectedBody, rec.Body.String())
 		})
@@ -155,7 +146,6 @@ func TestAuthMiddleware_Errors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup mocks
 			mockClient := &mockTailscaleClient{
 				email: "test@example.com",
 				err:   tt.clientErr,
@@ -169,30 +159,23 @@ func TestAuthMiddleware_Errors(t *testing.T) {
 				err: tt.querierErr,
 			}
 
-			// Create auth provider
 			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
-			// Create middleware
 			middleware := authMiddleware(provider, nil)
 
-			// Create test handler
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("success"))
 			})
 
-			// Wrap handler with middleware
 			wrapped := middleware(handler)
 
-			// Create request and recorder
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.RemoteAddr = "127.0.0.1:12345"
 			rec := httptest.NewRecorder()
 
-			// Execute request
 			wrapped.ServeHTTP(rec, req)
 
-			// Assert response
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 		})
 	}
@@ -526,7 +509,6 @@ func TestUserEnrichmentMiddleware(t *testing.T) {
 	middleware := userEnrichmentMiddleware()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check if logger was enriched
 		logger := getLogger(r.Context())
 		require.NotNil(t, logger)
 
@@ -535,7 +517,6 @@ func TestUserEnrichmentMiddleware(t *testing.T) {
 
 	wrapped := middleware(handler)
 
-	// Test with user in context
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rc := newRequestContext()
 	rc.User = &ContextUser{

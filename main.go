@@ -92,7 +92,6 @@ func run() int {
 		}
 	}()
 
-	// Record version information as metric attributes
 	telemetry.Metrics.VersionGauge.Record(ctx, 1,
 		metric.WithAttributes(
 			attribute.String("version", version),
@@ -101,7 +100,6 @@ func run() int {
 	)
 
 	sigChan := make(chan os.Signal, 1)
-	// Handle common shutdown signals
 	signal.Notify(sigChan,
 		syscall.SIGINT,  // Ctrl+C
 		syscall.SIGTERM, // Termination request
@@ -109,7 +107,6 @@ func run() int {
 		syscall.SIGHUP,  // Hang up detected on controlling terminal
 	)
 
-	// CSRF is now handled by middleware, no need for separate logging
 
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {

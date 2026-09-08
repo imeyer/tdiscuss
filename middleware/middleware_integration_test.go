@@ -15,12 +15,10 @@ import (
 
 func TestMiddlewareIntegration(t *testing.T) {
 	t.Run("middleware chain execution order", func(t *testing.T) {
-		// Create a test handler that records execution
 		var executed []string
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			executed = append(executed, "handler")
 
-			// Verify context has expected values
 			requestID := GetRequestID(r.Context())
 			assert.NotEmpty(t, requestID)
 
@@ -28,7 +26,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 			w.Write([]byte("OK"))
 		})
 
-		// Create middleware chain
 		chain := NewChain(
 			RequestContextMiddleware(),
 			func(next http.Handler) http.Handler {
@@ -47,14 +44,11 @@ func TestMiddlewareIntegration(t *testing.T) {
 			},
 		)
 
-		// Create request
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 
-		// Execute
 		chain.Then(handler).ServeHTTP(rec, req)
 
-		// Verify execution order
 		expected := []string{"m1-before", "m2-before", "handler", "m2-after", "m1-after"}
 		assert.Equal(t, expected, executed)
 		assert.Equal(t, http.StatusOK, rec.Code)
@@ -74,7 +68,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 		middleware(handler).ServeHTTP(rec, req)
 
-		// Check headers
 		assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 		assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 		assert.Contains(t, rec.Header().Get("Content-Security-Policy"), "default-src 'self'")
@@ -94,7 +87,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 		middleware := RequestSizeLimitMiddleware(100) // 100 bytes limit
 
-		// Test within limit
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("small body"))
 		rec := httptest.NewRecorder()
 		middleware(handler).ServeHTTP(rec, req)
@@ -110,7 +102,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 	t.Run("observability middleware", func(t *testing.T) {
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get logger from context
 			logger := GetLogger(r.Context())
 			assert.NotNil(t, logger)
 
@@ -118,10 +109,8 @@ func TestMiddlewareIntegration(t *testing.T) {
 			w.Write([]byte("OK"))
 		})
 
-		// Create test logger
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-		// Create observability config
 		config := &ObservabilityConfig{
 			ServiceName: "test",
 			Logger:      logger,
@@ -172,7 +161,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 
 		chain := NewChain(postOnlyMiddleware, getOnlyMiddleware)
 
-		// Test POST request
 		executedPOST, executedGET = false, false
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
 		rec := httptest.NewRecorder()
@@ -180,7 +168,6 @@ func TestMiddlewareIntegration(t *testing.T) {
 		assert.True(t, executedPOST)
 		assert.False(t, executedGET)
 
-		// Test GET request
 		executedPOST, executedGET = false, false
 		req = httptest.NewRequest(http.MethodGet, "/", nil)
 		rec = httptest.NewRecorder()
@@ -281,7 +268,6 @@ func TestContextHelpers(t *testing.T) {
 	t.Run("request context", func(t *testing.T) {
 		ctx := context.Background()
 
-		// Create and add request context
 		rc := NewRequestContext()
 		rc.User = &ContextUser{
 			ID:      123,
@@ -292,24 +278,20 @@ func TestContextHelpers(t *testing.T) {
 
 		ctx = WithRequestContext(ctx, rc)
 
-		// Retrieve request context
 		retrieved, ok := GetRequestContext(ctx)
 		assert.True(t, ok)
 		assert.Equal(t, rc, retrieved)
 
-		// Test user helper
 		user, ok := GetUser(ctx)
 		assert.True(t, ok)
 		assert.Equal(t, int64(123), user.ID)
 		assert.Equal(t, "test@example.com", user.Email)
 		assert.True(t, user.IsAdmin)
 
-		// Test custom value
 		val, ok := retrieved.Get("custom")
 		assert.True(t, ok)
 		assert.Equal(t, "value", val)
 
-		// Test request ID
 		assert.NotEmpty(t, GetRequestID(ctx))
 	})
 

@@ -94,25 +94,21 @@ func (v *Validator) ValidateMinLength(field, value string, minLength int) bool {
 
 // ValidateURL validates that a string is a valid URL
 func (v *Validator) ValidateURL(field, value string) bool {
-	// Allow empty URLs
 	if value == "" {
 		return true
 	}
 
-	// Parse the URL
 	u, err := url.Parse(value)
 	if err != nil {
 		v.AddError(field, "must be a valid URL")
 		return false
 	}
 
-	// Check for required components
 	if u.Scheme == "" || u.Host == "" {
 		v.AddError(field, "must be a complete URL with scheme and host")
 		return false
 	}
 
-	// Only allow http and https
 	if u.Scheme != "http" && u.Scheme != "https" {
 		v.AddError(field, "must use http or https protocol")
 		return false
@@ -123,7 +119,6 @@ func (v *Validator) ValidateURL(field, value string) bool {
 
 // ValidateNoHTML validates that a string contains no HTML tags
 func (v *Validator) ValidateNoHTML(field, value string) bool {
-	// Check for HTML-like tags with tag names
 	// This matches <tagname> or </tagname> or <tagname attr="value">
 	htmlRegex := regexp.MustCompile(`</?[a-zA-Z][^>]*>`)
 	if htmlRegex.MatchString(value) {
@@ -167,7 +162,6 @@ func (v *Validator) ValidateAlphanumeric(field, value, allowedExtras string) boo
 	return true
 }
 
-// Form validation constants
 const (
 	MaxTitleLength    = 200
 	MaxSubjectLength  = 255
@@ -185,13 +179,11 @@ const (
 func ValidateThreadForm(subject, body string) ValidationErrors {
 	v := NewValidator()
 
-	// Validate subject
 	if v.ValidateRequired("subject", subject) {
 		v.ValidateMaxLength("subject", subject, MaxSubjectLength)
 		v.ValidateMinLength("subject", subject, 3)
 	}
 
-	// Validate body
 	if v.ValidateRequired("body", body) {
 		v.ValidateMaxLength("body", body, MaxBodyLength)
 		v.ValidateMinLength("body", body, 1)
@@ -204,7 +196,6 @@ func ValidateThreadForm(subject, body string) ValidationErrors {
 func ValidateThreadPostForm(body string) ValidationErrors {
 	v := NewValidator()
 
-	// Validate body
 	if v.ValidateRequired("body", body) {
 		v.ValidateMaxLength("body", body, MaxBodyLength)
 		v.ValidateMinLength("body", body, 1)
@@ -236,13 +227,11 @@ func ValidateProfileForm(photoURL, location, preferredName, bio, pronouns string
 func ValidateAdminForm(boardTitle, editWindowStr string) (string, int64, ValidationErrors) {
 	v := NewValidator()
 
-	// Validate board title
 	if v.ValidateRequired("board_title", boardTitle) {
 		v.ValidateMaxLength("board_title", boardTitle, MaxTitleLength)
 		v.ValidateMinLength("board_title", boardTitle, 1)
 	}
 
-	// Validate edit window
 	editWindow := int64(0)
 	if v.ValidateRequired("edit_window", editWindowStr) {
 		if val, ok := v.ValidateInteger("edit_window", editWindowStr, MinEditWindow, MaxEditWindow); ok {
@@ -259,7 +248,6 @@ func SanitizeInput(input string) string {
 	input = strings.ReplaceAll(input, "\r\n", "\n")
 	input = strings.ReplaceAll(input, "\r", "\n")
 
-	// Trim whitespace
 	input = strings.TrimSpace(input)
 
 	// Normalize horizontal whitespace (spaces/tabs) but preserve newlines
@@ -270,7 +258,6 @@ func SanitizeInput(input string) string {
 	newlineRegex := regexp.MustCompile(`\n{3,}`)
 	input = newlineRegex.ReplaceAllString(input, "\n\n")
 
-	// Remove null bytes
 	input = strings.ReplaceAll(input, "\x00", "")
 
 	return input

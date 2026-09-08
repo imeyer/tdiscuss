@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// Test helpers
 func NewTestLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -71,7 +70,6 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}),
 			checkHeaders: func(t *testing.T, headers http.Header) {
-				// Check all security headers
 				assert.Equal(t, "nosniff", headers.Get("X-Content-Type-Options"))
 				assert.Equal(t, "DENY", headers.Get("X-Frame-Options"))
 				assert.Equal(t, "0", headers.Get("X-XSS-Protection"))
@@ -84,11 +82,9 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 				assert.Contains(t, permPolicy, "geolocation=()")
 				assert.Contains(t, permPolicy, "microphone=()")
 
-				// Check HSTS header - only set for HTTPS
 				// Since test request doesn't have TLS, it shouldn't be set
 				assert.Empty(t, headers.Get("Strict-Transport-Security"))
 
-				// Check CSP header
 				csp := headers.Get("Content-Security-Policy")
 				assert.Contains(t, csp, "default-src 'self'")
 				assert.Contains(t, csp, "script-src 'self'")
@@ -121,7 +117,6 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}),
 			checkHeaders: func(t *testing.T, headers http.Header) {
-				// Should have HSTS header
 				assert.Equal(t, "max-age=63072000; includeSubDomains; preload", headers.Get("Strict-Transport-Security"))
 			},
 		},
@@ -131,7 +126,6 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 				w.Write([]byte("test response"))
 			}),
 			checkHeaders: func(t *testing.T, headers http.Header) {
-				// Just verify headers are still set
 				assert.Equal(t, "nosniff", headers.Get("X-Content-Type-Options"))
 			},
 		},
@@ -139,12 +133,10 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create the middleware chain
 			config := DefaultSecurityConfig()
 			middleware := SecurityHeadersMiddleware(config)
 			handler := middleware(tt.handler)
 
-			// Create a test request
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
 
 			// For HSTS test, simulate HTTPS
@@ -154,10 +146,8 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 
 			rec := httptest.NewRecorder()
 
-			// Execute the handler
 			handler.ServeHTTP(rec, req)
 
-			// Check headers
 			tt.checkHeaders(t, rec.Header())
 		})
 	}
@@ -256,7 +246,6 @@ func TestRequestSizeLimitMiddleware(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a handler that reads the body
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
@@ -265,7 +254,6 @@ func TestRequestSizeLimitMiddleware(t *testing.T) {
 					return
 				}
 
-				// Verify we received the expected amount of data
 				if len(body) != tt.bodySize && tt.expectedStatus == http.StatusOK {
 					t.Errorf("Expected body size %d, got %d", tt.bodySize, len(body))
 				}
@@ -274,20 +262,16 @@ func TestRequestSizeLimitMiddleware(t *testing.T) {
 				w.Write([]byte("success"))
 			})
 
-			// Create the middleware
 			middleware := RequestSizeLimitMiddleware(tt.maxSize)(handler)
 
-			// Create request with body
 			body := bytes.Repeat([]byte("a"), tt.bodySize)
 			req := httptest.NewRequest(tt.method, "/test", bytes.NewReader(body))
 			req.ContentLength = int64(tt.bodySize)
 
 			rec := httptest.NewRecorder()
 
-			// Execute the middleware
 			middleware.ServeHTTP(rec, req)
 
-			// Check response
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 
 			if tt.expectedBody != "" {
@@ -302,7 +286,6 @@ func TestRequestSizeLimitMiddleware_ReadPartially(t *testing.T) {
 	maxSize := int64(1024) // 1KB limit
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read only 100 bytes
 		buf := make([]byte, 100)
 		n, err := r.Body.Read(buf)
 
@@ -358,7 +341,6 @@ func TestCSRFProtectionMiddleware(t *testing.T) {
 
 		for _, method := range unsafeMethods {
 			req := httptest.NewRequest(method, "/", nil)
-			// Simulate a cross-origin request
 			req.Header.Set("Origin", "https://evil.com")
 			w := httptest.NewRecorder()
 
@@ -373,7 +355,6 @@ func TestCSRFProtectionMiddleware(t *testing.T) {
 
 
 func TestCSRFMiddlewareIntegration(t *testing.T) {
-	// Test CSRF protection with a simpler approach
 	config := defaultSecurityConfig()
 	csrfMiddleware := csrfProtectionMiddleware(config)
 
@@ -399,7 +380,6 @@ func TestCSRFMiddlewareIntegration(t *testing.T) {
 
 		wrapped.ServeHTTP(w, req)
 
-		// Should be blocked by CSRF protection
 		assert.Equal(t, http.StatusForbidden, w.Code, "Cross-origin POST should be blocked by CSRF")
 		assert.Contains(t, w.Body.String(), "Cross-origin request rejected")
 	})
@@ -409,7 +389,6 @@ func TestMiddlewareChaining(t *testing.T) {
 	// Test that multiple middlewares work correctly together
 	var executionOrder []string
 
-	// Create a handler that records execution
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		executionOrder = append(executionOrder, "handler")
 
@@ -430,31 +409,25 @@ func TestMiddlewareChaining(t *testing.T) {
 		}
 	}
 
-	// Chain middlewares
 	config := DefaultSecurityConfig()
 	securityHeadersMiddleware := SecurityHeadersMiddleware(config)
 	sizeLimitMiddleware := RequestSizeLimitMiddleware(1024)
 
-	// Build the chain
 	chain := trackingMiddleware("outer")(
 		sizeLimitMiddleware(
 			securityHeadersMiddleware(handler),
 		),
 	)
 
-	// Create request
 	req := httptest.NewRequest(http.MethodPost, "/test", strings.NewReader("test body"))
 	rec := httptest.NewRecorder()
 
-	// Execute
 	executionOrder = []string{} // Reset
 	chain.ServeHTTP(rec, req)
 
-	// Verify execution order
 	expected := []string{"outer-before", "handler", "outer-after"}
 	assert.Equal(t, expected, executionOrder)
 
-	// Verify headers are still set
 	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
@@ -509,12 +482,10 @@ func TestSecurityHeadersMiddleware_VariousContentTypes(t *testing.T) {
 			assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
 			assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
 
-			// Content type should be preserved
 			if tt.contentType != "" {
 				assert.Equal(t, tt.contentType, rec.Header().Get("Content-Type"))
 			}
 
-			// Body should be unchanged
 			assert.Equal(t, tt.body, rec.Body.String())
 		})
 	}

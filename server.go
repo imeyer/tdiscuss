@@ -20,7 +20,6 @@ import (
 	tsnetlog "tailscale.com/types/logger"
 )
 
-// Interfaces
 type TailscaleClient interface {
 	WhoIs(ctx context.Context, remoteAddr string) (*apitype.WhoIsResponse, error)
 	ExpandSNIName(ctx context.Context, name string) (fqdn string, ok bool)
@@ -33,7 +32,6 @@ type ExtendedQuerier interface {
 	WithTx(tx pgx.Tx) ExtendedQuerier
 }
 
-// Types
 type User struct {
 	ID    int64
 	Email string
@@ -59,7 +57,6 @@ func (qw *QueriesWrapper) WithTx(tx pgx.Tx) ExtendedQuerier {
 	}
 }
 
-// Server functions
 func createHTTPServer(mux http.Handler) *http.Server {
 	return &http.Server{
 		Addr:         ":80",
@@ -157,27 +154,6 @@ func setupTsNetServer(logger *slog.Logger) (*tsnet.Server, error) {
 
 	s := NewTsNetServer(logger)
 
-	// TODO: enable once we move to tsnet
-	// // Set up HTTP health check
-	// http.HandleFunc("/health", healthCheck)
-	// s.ServeHTTP(":80", nil) // health check only
-
-	// TODO: enable once we get https
-	// ln443, err := s.Listen("tcp", ":443")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-	// defer ln443.Close()
-
-	// tls_config := &tls.Config{
-	// 	GetCertificate: lc.GetCertificate,
-	// }
-
-	// ln443 = tls.NewListener(ln443, tls_config)
-	// go func() {
-	// 	log.Fatal(http.Serve(ln443, mux))
-	// }()
-
 	return s, nil
 }
 
@@ -249,7 +225,6 @@ func waitForShutdown(sigChan chan os.Signal, logger *slog.Logger, servers ...nam
 		exitCode = 128 + int(sigNum)
 	}
 
-	// Set up graceful shutdown with generous timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
@@ -276,7 +251,6 @@ func waitForShutdown(sigChan chan os.Signal, logger *slog.Logger, servers ...nam
 			logger.Warn("shutdown timeout reached, abandoning remaining servers")
 			return exitCode
 		case sig := <-sigChan:
-			// Handle repeated signals
 			logger.Warn("received additional signal during shutdown",
 				slog.String("signal", sig.String()))
 			if sig == syscall.SIGTERM || sig == syscall.SIGQUIT {

@@ -19,10 +19,8 @@ func BoardDataMiddleware(querier BoardDataQuerier) func(http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			
-			// Fetch board data
 			boardData, err := querier.GetBoardData(ctx)
 			if err != nil {
-				// Log error but continue - we'll use default title
 				// Note: This error is expected if board_data table is empty
 				boardData = nil
 			}
@@ -30,7 +28,6 @@ func BoardDataMiddleware(querier BoardDataQuerier) func(http.Handler) http.Handl
 			// Add board data to context even if nil
 			ctx = context.WithValue(ctx, boardDataContextKey{}, boardData)
 			
-			// Continue with the request
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

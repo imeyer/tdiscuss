@@ -269,7 +269,6 @@ func TestParseMarkdownToHTML(t *testing.T) {
 func TestParseMarkdownToHTMLError(t *testing.T) {
 	// This test case is to simulate an error condition.
 	// However, it's difficult to cause an error in the goldmark parser.
-	// You might need to mock the goldmark.Convert function to simulate an error.
 	// For now, we'll just test that extremely large input doesn't cause issues.
 	largeInput := strings.Repeat("a", 1000000) // 1 million characters
 	result := parseMarkdownToHTML(largeInput)

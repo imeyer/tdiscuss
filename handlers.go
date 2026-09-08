@@ -18,7 +18,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Template data structures
 type MemberThreadPostTemplateData struct {
 	MemberID    int64
 	MemberEmail string
@@ -66,7 +65,6 @@ type ThreadTemplateData struct {
 	Locked         pgtype.Bool
 }
 
-// Helper methods
 func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data map[string]interface{}) {
 	if err := s.tmpls.ExecuteTemplate(w, tmpl, data); err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
@@ -78,7 +76,6 @@ func (s *DiscussService) renderError(w http.ResponseWriter, statusCode int) {
 	http.Error(w, http.StatusText(statusCode), statusCode)
 }
 
-// Admin handlers
 func (s *DiscussService) Admin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		s.AdminGET(w, r)
@@ -105,7 +102,6 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get board data with statistics
 	boardData, err := s.queries.GetBoardData(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting board data", slog.String("error", err.Error()))
@@ -324,12 +320,10 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 	case "delete_thread":
 		// TODO: Implement DeleteThread query
 		s.logger.InfoContext(r.Context(), "DeleteThread not implemented", slog.Int64("threadID", threadID))
-		// For now, just log and redirect
 	case "update_config":
 		boardTitle := r.Form.Get("board_title")
 		editWindowStr := r.Form.Get("edit_window")
 
-		// Update board title
 		if boardTitle != "" {
 			if err := s.queries.UpdateBoardTitle(r.Context(), boardTitle); err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to update board title",
@@ -339,7 +333,6 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Update edit window
 		if editWindowStr != "" {
 			editWindow, err := strconv.ParseInt(editWindowStr, 10, 32)
 			if err != nil {
@@ -404,11 +397,9 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get and sanitize inputs
 	subjectInput := SanitizeInput(r.Form.Get("subject"))
 	bodyInput := SanitizeInput(r.Form.Get("thread_body"))
 
-	// Validate inputs
 	if errors := ValidateThreadForm(subjectInput, bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
 		http.Error(w, errors.Error(), http.StatusBadRequest)
@@ -511,10 +502,8 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get and sanitize input
 	bodyInput := SanitizeInput(r.Form.Get("thread_body"))
 
-	// Validate input
 	if errors := ValidateThreadPostForm(bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
 		http.Error(w, errors.Error(), http.StatusBadRequest)
@@ -556,14 +545,12 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get the member details
 	member, err := s.queries.GetMember(r.Context(), user.ID)
 	if err != nil {
 		s.renderError(w, http.StatusInternalServerError)
 		return
 	}
 
-	// Check if the current user is the owner of the profile
 	if member.Email != user.Email {
 		s.renderError(w, http.StatusForbidden)
 		return
@@ -571,7 +558,6 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 
 
 	if r.Method == http.MethodGet {
-		// Render the edit profile form
 		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
 			"Title":            GetBoardTitle(r),
 			"Member":           member,
@@ -583,27 +569,23 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Handle POST request
 	if err := r.ParseForm(); err != nil {
 		s.renderError(w, http.StatusBadRequest)
 		return
 	}
 
-	// Get and sanitize inputs
 	newPhotoURL := SanitizeInput(r.Form.Get("photo_url"))
 	newLocation := SanitizeInput(r.Form.Get("location"))
 	newPreferredName := SanitizeInput(r.Form.Get("preferred_name"))
 	newBio := SanitizeInput(r.Form.Get("bio"))
 	newPronouns := SanitizeInput(r.Form.Get("pronouns"))
 
-	// Validate inputs
 	if errors := ValidateProfileForm(newPhotoURL, newLocation, newPreferredName, newBio, newPronouns); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
 		http.Error(w, errors.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Update the member's profile
 	err = s.queries.UpdateMemberProfileByID(r.Context(), UpdateMemberProfileByIDParams{
 		MemberID: user.ID,
 		PhotoUrl: pgtype.Text{
@@ -633,7 +615,6 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Redirect to the member's profile page
 	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/member/%d", user.ID), http.StatusSeeOther)
 }
@@ -674,11 +655,9 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get and sanitize inputs
 	bodyInput := SanitizeInput(r.Form.Get("thread_body"))
 	subjectInput := SanitizeInput(r.Form.Get("subject"))
 
-	// Validate inputs
 	if errors := ValidateThreadForm(subjectInput, bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
 		http.Error(w, errors.Error(), http.StatusBadRequest)
@@ -690,7 +669,6 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 	// For subjects, just sanitize HTML without markdown parsing (single-line text)
 	subject := parseHTMLStrict(subjectInput)
 
-	// Parse thread ID from path
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
@@ -774,7 +752,6 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 	}
 
 
-	// Parse thread ID from path
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
@@ -799,7 +776,6 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Render the edit form
 	s.renderTemplate(w, r, "edit-thread.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"User":             user,
@@ -839,10 +815,8 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get and sanitize input
 	bodyInput := SanitizeInput(r.Form.Get("thread_post_body"))
 
-	// Validate input
 	if errors := ValidateThreadPostForm(bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
 		http.Error(w, errors.Error(), http.StatusBadRequest)
@@ -851,7 +825,6 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 
 	body := parseHTMLLessStrict(parseMarkdownToHTML(bodyInput))
 
-	// Parse thread post ID from path
 	postIDStr := r.PathValue("pid")
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
 	if err != nil {
@@ -877,7 +850,6 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 	}
 
 	if tp.Body.String == body {
-		// No changes made, just redirect
 		threadIDStr := r.PathValue("tid")
 		http.Redirect(w, r, fmt.Sprintf("/thread/%s", threadIDStr), http.StatusSeeOther)
 		return
@@ -918,7 +890,6 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Parse thread ID from path
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
@@ -927,7 +898,6 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Parse thread post ID from path
 	postIDStr := r.PathValue("pid")
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
 	if err != nil {
@@ -952,7 +922,6 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Render the edit form
 	s.renderTemplate(w, r, "edit-thread-post.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"User":             user,
@@ -1133,7 +1102,6 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get member details
 	member, err := s.queries.GetMember(r.Context(), memberID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -1145,7 +1113,6 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get member's threads
 	threads, err := s.queries.ListMemberThreads(r.Context(), memberID)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting member threads", slog.String("error", err.Error()))
@@ -1153,7 +1120,6 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		threads = []ListMemberThreadsRow{}
 	}
 
-	// Check if the current user can edit this profile
 	canEdit := user.ID == memberID || user.IsAdmin
 
 
@@ -1203,10 +1169,8 @@ func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Generate example outputs to demonstrate the difference
 	subjectExample := parseHTMLStrict("Check out this **cool** <script>alert('xss')</script> thing!")
 
-	// Render emoji examples through the markdown parser
 	heartEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":heart:"))
 	thumbsUpEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":+1:"))
 	smileEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":smile:"))
@@ -1234,22 +1198,18 @@ func OTELMiddleware(serviceName string, s *DiscussService) func(next http.Handle
 
 			r = r.WithContext(ctx)
 
-			// Record request started
 			labels := []attribute.KeyValue{
 				attribute.String("method", r.Method),
 				attribute.String("route", r.URL.Path),
 			}
 
-			// Capture response
 			wrapped := &handlerResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 
-			// Handle the request
 			defer func() {
 				if rec := recover(); rec != nil {
 					span.RecordError(fmt.Errorf("panic: %v", rec))
 					span.SetStatus(codes.Error, "panic occurred")
 
-					// Record panic metric
 					if s.telemetry.Metrics.ErrorCounter != nil {
 						s.telemetry.Metrics.ErrorCounter.Add(ctx, 1, metric.WithAttributes(
 							append(labels,
@@ -1264,15 +1224,12 @@ func OTELMiddleware(serviceName string, s *DiscussService) func(next http.Handle
 				}
 			}()
 
-			// Execute the handler
 			startTime := time.Now()
 			next.ServeHTTP(wrapped, r)
 			duration := time.Since(startTime).Seconds()
 
-			// Update labels with actual status
 			labels = append(labels, attribute.Int("status", wrapped.statusCode))
 
-			// Record metrics
 			if s.telemetry.Metrics.RequestCounter != nil {
 				s.telemetry.Metrics.RequestCounter.Add(ctx, 1, metric.WithAttributes(labels...))
 			}
@@ -1281,10 +1238,8 @@ func OTELMiddleware(serviceName string, s *DiscussService) func(next http.Handle
 				s.telemetry.Metrics.RequestDuration.Record(ctx, duration, metric.WithAttributes(labels...))
 			}
 
-			// Set span attributes
 			span.SetAttributes(labels...)
 
-			// Set status based on HTTP status code
 			if wrapped.statusCode >= 400 {
 				span.SetStatus(codes.Error, http.StatusText(wrapped.statusCode))
 			} else {
@@ -1307,7 +1262,6 @@ func (rw *handlerResponseWriter) WriteHeader(code int) {
 
 // GetBoardTitle returns the configured board title
 func GetBoardTitle(r *http.Request) string {
-	// Try to get from context first (set by middleware)
 	if r != nil && r.Context() != nil {
 		ctx := r.Context()
 		if boardData, ok := middleware.GetBoardData(ctx); ok && boardData != nil {
@@ -1321,12 +1275,11 @@ func GetBoardTitle(r *http.Request) string {
 			}
 		}
 	}
-	return "tdiscuss" // Default fallback
+	return "tdiscuss"
 }
 
 // HealthCheck handles health check requests
 func (s *DiscussService) HealthCheck(w http.ResponseWriter, r *http.Request) {
-	// Simple health check - could be expanded to check database connectivity, etc.
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }

@@ -101,7 +101,6 @@ func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("failed to create pool config: %w", err)
 	}
 
-	// Attempt to create the database connection
 	var dbconn *pgxpool.Pool
 	var connectErr error
 	for attempts := 1; attempts <= 3; attempts++ {
@@ -119,7 +118,6 @@ func setupDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("unable to connect to database after 3 attempts: %w", connectErr)
 	}
 
-	// Test the connection
 	if err := dbconn.Ping(dbCtx); err != nil {
 		dbconn.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)

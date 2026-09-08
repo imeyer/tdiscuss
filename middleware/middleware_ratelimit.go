@@ -25,18 +25,14 @@ type RateLimitConfig struct {
 	// Per-endpoint limits
 	EndpointLimits map[string]EndpointLimit
 
-	// User-based rate limiting
 	EnableUserRateLimit bool
 	UserRateMultiplier  float64 // Multiplier for authenticated users
 
-	// IP-based rate limiting
 	EnableIPRateLimit bool
 	CleanupInterval   time.Duration
 
-	// Response headers
 	IncludeHeaders bool
 
-	// Metrics
 	Meter        metric.Meter
 	MetricPrefix string
 }
@@ -74,7 +70,6 @@ type RateLimiter struct {
 	visitors map[string]*visitor
 	mu       sync.RWMutex
 
-	// Metrics
 	rateLimitHits  metric.Int64Counter
 	activeVisitors metric.Int64Gauge
 }
@@ -92,7 +87,6 @@ func newRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
 		visitors: make(map[string]*visitor),
 	}
 
-	// Initialize metrics if meter is provided
 	if config.Meter != nil {
 		prefix := config.MetricPrefix
 		if prefix == "" {
@@ -112,7 +106,6 @@ func newRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
 		)
 	}
 
-	// Start cleanup goroutine
 	go rl.cleanupVisitors()
 
 	return rl
@@ -122,22 +115,17 @@ func newRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
 func (rl *RateLimiter) Middleware() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get visitor key
 			visitorKey := rl.getVisitorKey(r)
 
-			// Get endpoint-specific limits if available
 			limit, burst := rl.getLimitsForPath(r.URL.Path)
 
-			// Get or create visitor
 			v := rl.getVisitor(visitorKey, limit, burst)
 
-			// Check rate limit
 			if !v.limiter.Allow() {
 				rl.handleRateLimitExceeded(w, r, v.limiter)
 				return
 			}
 
-			// Add rate limit headers if configured
 			if rl.config.IncludeHeaders {
 				rl.addRateLimitHeaders(w, v.limiter)
 			}
@@ -149,14 +137,12 @@ func (rl *RateLimiter) Middleware() Middleware {
 
 // getVisitorKey determines the key for rate limiting
 func (rl *RateLimiter) getVisitorKey(r *http.Request) string {
-	// Prefer user-based rate limiting for authenticated users
 	if rl.config.EnableUserRateLimit {
 		if user, ok := getUser(r.Context()); ok && user != nil {
 			return fmt.Sprintf("user:%d", user.ID)
 		}
 	}
 
-	// Fall back to IP-based rate limiting
 	if rl.config.EnableIPRateLimit {
 		return "ip:" + getClientIP(r)
 	}
@@ -167,14 +153,12 @@ func (rl *RateLimiter) getVisitorKey(r *http.Request) string {
 
 // getLimitsForPath returns rate limits for a specific path
 func (rl *RateLimiter) getLimitsForPath(path string) (float64, int) {
-	// Check endpoint-specific limits
 	for pattern, limit := range rl.config.EndpointLimits {
 		if matchesPattern(path, pattern) {
 			return limit.Rate, limit.Burst
 		}
 	}
 
-	// Return default limits
 	return rl.config.RequestsPerSecond, rl.config.Burst
 }
 
@@ -185,7 +169,6 @@ func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor
 
 	v, exists := rl.visitors[key]
 	if !exists {
-		// Apply user rate multiplier if applicable
 		if strings.HasPrefix(key, "user:") && rl.config.UserRateMultiplier > 0 {
 			limit *= rl.config.UserRateMultiplier
 			burst = int(float64(burst) * rl.config.UserRateMultiplier)
@@ -197,7 +180,6 @@ func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor
 		}
 		rl.visitors[key] = v
 
-		// Update metrics
 		if rl.activeVisitors != nil {
 			rl.activeVisitors.Record(context.Background(), int64(len(rl.visitors)))
 		}
@@ -210,7 +192,6 @@ func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor
 
 // handleRateLimitExceeded handles rate limit exceeded responses
 func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Request, limiter *rate.Limiter) {
-	// Log rate limit hit
 	visitorKey := rl.getVisitorKey(r)
 	rl.logger.WarnContext(r.Context(), "rate limit exceeded",
 		slog.String("visitor", visitorKey),
@@ -219,7 +200,6 @@ func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Re
 		slog.String("remote_addr", r.RemoteAddr),
 	)
 
-	// Record metric
 	if rl.rateLimitHits != nil {
 		attrs := []attribute.KeyValue{
 			attribute.String("visitor_type", getVisitorType(visitorKey)),
@@ -228,11 +208,9 @@ func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Re
 		rl.rateLimitHits.Add(r.Context(), 1, metric.WithAttributes(attrs...))
 	}
 
-	// Add rate limit headers
 	if rl.config.IncludeHeaders {
 		rl.addRateLimitHeaders(w, limiter)
 
-		// Add Retry-After header
 		if reservation := limiter.Reserve(); reservation.OK() {
 			delay := reservation.Delay()
 			reservation.Cancel() // Cancel since we're not using it
@@ -240,7 +218,6 @@ func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	// Send error response
 	http.Error(w, "Rate limit exceeded. Please try again later.", http.StatusTooManyRequests)
 }
 
@@ -249,12 +226,10 @@ func (rl *RateLimiter) addRateLimitHeaders(w http.ResponseWriter, limiter *rate.
 	limit := limiter.Limit()
 	burst := limiter.Burst()
 
-	// Standard rate limit headers
 	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(burst))
 	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(int(limiter.Tokens())))
 	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Second).Unix(), 10))
 
-	// Additional info
 	w.Header().Set("X-RateLimit-Policy", fmt.Sprintf("%.2f;w=1;burst=%d", limit, burst))
 }
 
@@ -272,7 +247,6 @@ func (rl *RateLimiter) cleanupVisitors() {
 			}
 		}
 
-		// Update metrics
 		if rl.activeVisitors != nil {
 			rl.activeVisitors.Record(context.Background(), int64(len(rl.visitors)))
 		}
@@ -280,8 +254,6 @@ func (rl *RateLimiter) cleanupVisitors() {
 		rl.mu.Unlock()
 	}
 }
-
-// Helper functions
 
 // getClientIP returns the address of the peer that made the request.
 //
@@ -308,7 +280,6 @@ func matchesPattern(path, pattern string) bool {
 		return path == pattern
 	}
 
-	// Convert pattern to prefix/suffix match
 	parts := strings.Split(pattern, "*")
 	if len(parts) != 2 {
 		return false

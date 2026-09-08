@@ -55,7 +55,6 @@ func GetBufferSize() int64 {
 func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func(context.Context) error, error) {
 	telemetryConfig := &TelemetryConfig{}
 
-	// Log the version being set
 	config.Logger.Info("Setting up OTEL resource",
 		slog.String("service_name", config.ServiceName),
 		slog.String("service_version", config.ServiceVersion),
@@ -91,7 +90,6 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 			),
 		)
 	} else {
-		// Configure metric/meter
 		metricExporter, err := otlpmetrichttp.New(ctx,
 			otlpmetrichttp.WithInsecure())
 		if err != nil {
@@ -109,7 +107,6 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 	otel.SetMeterProvider(meterProvider)
 	telemetryConfig.Meter = meterProvider.Meter(config.ServiceName)
 
-	// Configure OTLP log handler
 	logExporter, err := otlploghttp.New(ctx,
 		otlploghttp.WithCompression(otlploghttp.GzipCompression),
 	)
@@ -137,7 +134,6 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 
 	telemetryConfig.LogHandler = otlpLogHandler
 
-	// Configure tracer with compression
 	traceExporter, err := otlptracehttp.New(ctx,
 		otlptracehttp.WithCompression(otlptracehttp.GzipCompression),
 		otlptracehttp.WithInsecure(),
@@ -157,7 +153,6 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 		sdktrace.WithLocalParentNotSampled(sdktrace.TraceIDRatioBased(config.TraceSampleRate)),
 	)
 
-	// Configure the sampler
 	if config.TraceSampleRate >= 1.0 {
 		sampler = sdktrace.AlwaysSample()
 	} else if config.TraceSampleRate <= 0.0 {
@@ -180,9 +175,6 @@ func setupTelemetry(ctx context.Context, config *Config) (*TelemetryConfig, func
 	otel.SetTracerProvider(traceProvider)
 	telemetryConfig.Tracer = traceProvider.Tracer(config.ServiceName)
 
-	//
-	// Initialize metrics
-	//
 	initializeMetrics(telemetryConfig.Meter, telemetryConfig)
 
 	cleanup := func(ctx context.Context) error {

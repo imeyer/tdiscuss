@@ -16,7 +16,6 @@ type SecurityConfig struct {
 	CSPDirectives map[string]string
 	GenerateNonce bool
 
-	// HSTS configuration
 	HSTSMaxAge            int
 	HSTSIncludeSubDomains bool
 	HSTSPreload           bool
@@ -26,15 +25,12 @@ type SecurityConfig struct {
 	CSRFTrustedOrigins []string
 	CSRFBypassPatterns []string
 
-	// Feature policy
 	PermissionsPolicy map[string][]string
 
-	// Security headers
 	FrameOptions       string
 	ContentTypeOptions string
 	ReferrerPolicy     string
 
-	// Custom headers
 	CustomHeaders map[string]string
 }
 
@@ -86,7 +82,6 @@ func securityHeadersMiddleware(config *SecurityConfig) Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Basic security headers
 			w.Header().Set("X-Content-Type-Options", config.ContentTypeOptions)
 			w.Header().Set("X-Frame-Options", config.FrameOptions)
 			w.Header().Set("Referrer-Policy", config.ReferrerPolicy)
@@ -95,18 +90,15 @@ func securityHeadersMiddleware(config *SecurityConfig) Middleware {
 			// We disable the XSS auditor as it can introduce vulnerabilities
 			w.Header().Set("X-XSS-Protection", "0")
 
-			// Permissions Policy
 			if permissionsPolicy != "" {
 				w.Header().Set("Permissions-Policy", permissionsPolicy)
 			}
 
-			// HSTS - only on HTTPS
 			if isHTTPS(r) {
 				hsts := buildHSTS(config)
 				w.Header().Set("Strict-Transport-Security", hsts)
 			}
 
-			// CSP with optional nonce
 			if config.GenerateNonce {
 				nonce := generateNonce()
 				rc := getOrCreateRequestContext(r.Context())
@@ -118,7 +110,6 @@ func securityHeadersMiddleware(config *SecurityConfig) Middleware {
 				w.Header().Set("Content-Security-Policy", staticCSP)
 			}
 
-			// Custom headers
 			for k, v := range config.CustomHeaders {
 				w.Header().Set(k, v)
 			}
@@ -134,28 +125,24 @@ func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
 		config = defaultSecurityConfig()
 	}
 
-	// Configure the built-in CSRF protection
 	protection := config.CSRFProtection
 	if protection == nil {
 		protection = http.NewCrossOriginProtection()
 	}
 
-	// Add trusted origins
 	for _, origin := range config.CSRFTrustedOrigins {
 		if err := protection.AddTrustedOrigin(origin); err != nil {
-			// Log error but continue (invalid origins are ignored)
+			// Invalid origins are ignored.
 			continue
 		}
 	}
 
-	// Add bypass patterns
 	for _, pattern := range config.CSRFBypassPatterns {
 		protection.AddInsecureBypassPattern(pattern)
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Use Go 1.25's built-in CSRF protection
 			if err := protection.Check(r); err != nil {
 				http.Error(w, "Cross-origin request rejected", http.StatusForbidden)
 				return
@@ -173,14 +160,12 @@ func requestSizeLimitMiddleware(maxSize int64) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only limit methods that typically have bodies
 			if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
-				// Early rejection based on Content-Length
 				if r.ContentLength > maxSize {
 					http.Error(w, fmt.Sprintf("Request body too large. Maximum size: %d bytes", maxSize),
 						http.StatusRequestEntityTooLarge)
 					return
 				}
 
-				// Wrap body reader
 				r.Body = http.MaxBytesReader(w, r.Body, maxSize)
 			}
 
@@ -188,8 +173,6 @@ func requestSizeLimitMiddleware(maxSize int64) Middleware {
 		})
 	}
 }
-
-// Helper functions
 
 func buildCSP(directives map[string]string) string {
 	var parts []string
@@ -204,18 +187,15 @@ func buildCSP(directives map[string]string) string {
 }
 
 func buildCSPWithNonce(directives map[string]string, nonce string) string {
-	// Clone directives
 	newDirectives := make(map[string]string)
 	for k, v := range directives {
 		newDirectives[k] = v
 	}
 
-	// Add nonce to script-src
 	if scriptSrc, ok := newDirectives["script-src"]; ok {
 		newDirectives["script-src"] = fmt.Sprintf("%s 'nonce-%s'", scriptSrc, nonce)
 	}
 
-	// Add nonce to style-src and remove unsafe-inline
 	if styleSrc, ok := newDirectives["style-src"]; ok {
 		styleSrc = strings.Replace(styleSrc, "'unsafe-inline'", "", 1)
 		newDirectives["style-src"] = fmt.Sprintf("%s 'nonce-%s'", strings.TrimSpace(styleSrc), nonce)

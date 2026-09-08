@@ -36,3 +36,6 @@ genhtml/
 .claude/
 
 .pgpass
+
+# Dev tailnet node state (make dev)
+/.dev/

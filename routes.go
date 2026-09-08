@@ -27,18 +27,14 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 		},
 	)
 
-	// Create middleware setup with converted telemetry config
 	telemetryConfig := ConvertTelemetryConfig(dsvc.telemetry)
 	ms := middleware.NewMiddlewareSetup(dsvc.logger, telemetryConfig, authProvider)
 
-	// Configure rate limiting
 	// We need to use the actual metric.Meter from the original config
 	ms.RateLimitConfig.Meter = dsvc.telemetry.Meter
 
-	// Check if we're in dev mode based on debug flag
 	isDevMode := dsvc.logger.Enabled(context.Background(), slog.LevelDebug)
 
-	// Configure rate limits with more permissive admin rate in dev mode
 	adminRate := 0.2 // Default: 1 request per 5 seconds
 	if isDevMode {
 		adminRate = 10.0 // Dev mode: 10 requests per second
@@ -52,7 +48,6 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 		"/admin":             {Pattern: "/admin", Rate: adminRate, Burst: 1},     // Varies based on dev mode
 	}
 
-	// Configure observability
 	// Use the actual OpenTelemetry types from the original config
 	ms.ObservabilityConfig = &middleware.ObservabilityConfig{
 		ServiceName:     "tdiscuss",
@@ -65,18 +60,14 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 		SampleRate:      1.0, // TODO: Get from config
 	}
 
-	// Create router
 	mux := http.NewServeMux()
 
-	// Create middleware chains
-	// Add board data middleware to all authenticated chains
 	boardDataMiddleware := middleware.BoardDataMiddleware(querierAdapter)
 
 	// All routes require Tailscale authentication
 	authChain := ms.CreateAuthenticatedChain().Append(boardDataMiddleware)
 	adminChain := ms.CreateAdminChain().Append(boardDataMiddleware)
 
-	// Routes accessible to all authenticated Tailscale users
 	mux.Handle("GET /{$}", authChain.ThenFunc(dsvc.ListThreads))
 	mux.Handle("GET /thread/{tid}", authChain.ThenFunc(dsvc.ListThreadPosts))
 	mux.Handle("GET /member/{mid}", authChain.ThenFunc(dsvc.ListMember))
@@ -91,27 +82,22 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 	mux.Handle("POST /member/edit", authChain.ThenFunc(dsvc.EditMemberProfile))
 	mux.Handle("GET /formatting", authChain.ThenFunc(dsvc.FormattingGuide))
 
-	// Admin routes
 	mux.Handle("GET /admin", adminChain.ThenFunc(dsvc.Admin))
 	mux.Handle("POST /admin", adminChain.ThenFunc(dsvc.Admin))
 
-	// Static files - serve directly from embed.FS
 	staticHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get the file path
 		path := r.URL.Path
 
 		// The embed path needs to include "static/" prefix
 		// URL: /static/theme.js -> embed path: static/theme.js
-		embedPath := path[1:] // Remove leading slash: /static/theme.js -> static/theme.js
+		embedPath := path[1:]
 
-		// Read the file from embed.FS
 		data, err := staticFS.ReadFile(embedPath)
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 
-		// Set content type based on file extension
 		switch {
 		case strings.HasSuffix(path, ".js"):
 			w.Header().Set("Content-Type", "application/javascript")
@@ -123,14 +109,12 @@ func SetupRoutes(dsvc *DiscussService, staticFS embed.FS) http.Handler {
 			w.Header().Set("Content-Type", "application/json")
 		}
 
-		// Write the file
 		w.Write(data)
 	})
 
 	// Static files don't need authentication - they're public assets
 	mux.Handle("/static/", staticHandler)
 
-	// Health check endpoint
 	healthChain := middleware.NewChain(
 		middleware.RequestContextMiddleware(),
 		middleware.LoggingMiddleware(dsvc.logger),
@@ -179,15 +163,12 @@ func SetupDebugRoutes(dsvc *DiscussService) http.Handler {
 func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Create response wrapper to track write status
 			wrapped := &recoveryResponseWriter{ResponseWriter: w}
 
 			defer func() {
 				if err := recover(); err != nil {
-					// Generate unique error ID for tracking
 					errorID := generateErrorID()
 
-					// Collect request information
 					requestInfo := []slog.Attr{
 						slog.String("error_id", errorID),
 						slog.String("method", r.Method),
@@ -197,18 +178,15 @@ func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 						slog.String("referer", r.Referer()),
 					}
 
-					// Add query parameters if present
 					if r.URL.RawQuery != "" {
 						requestInfo = append(requestInfo, slog.String("query", r.URL.RawQuery))
 					}
 
-					// Add form data for POST requests (be careful with sensitive data)
 					if r.Method == "POST" && r.Header.Get("Content-Type") == "application/x-www-form-urlencoded" {
 						if err := r.ParseForm(); err == nil {
 							// Only log non-sensitive form fields
 							formData := make(map[string]string)
 							for key, values := range r.Form {
-								// Skip sensitive fields
 								if !isSensitiveField(key) && len(values) > 0 {
 									formData[key] = values[0]
 								}
@@ -219,7 +197,6 @@ func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 						}
 					}
 
-					// Log the panic with full context
 					allArgs := make([]any, 0, len(requestInfo)+1)
 					allArgs = append(allArgs, slog.Any("panic_error", err))
 					for _, attr := range requestInfo {
@@ -230,13 +207,11 @@ func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 						slog.Group("panic_details", allArgs...),
 					)
 
-					// Return appropriate response if not already sent
 					if !wrapped.headersSent {
 						// Set security headers even in error responses
 						w.Header().Set("X-Content-Type-Options", "nosniff")
 						w.Header().Set("X-Frame-Options", "DENY")
 
-						// Return user-friendly error with error ID for support
 						w.Header().Set("Content-Type", "text/html; charset=utf-8")
 						w.WriteHeader(http.StatusInternalServerError)
 
@@ -246,7 +221,6 @@ func RecoveryMiddleware(logger *slog.Logger) middleware.Middleware {
 						// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 						w.Write([]byte(errorHTML))
 					} else {
-						// Response already started, log this fact
 						logger.WarnContext(r.Context(), "cannot send error response - headers already sent",
 							slog.String("error_id", errorID))
 					}
@@ -278,10 +252,7 @@ func (w *recoveryResponseWriter) Write(data []byte) (int, error) {
 	return w.ResponseWriter.Write(data)
 }
 
-// Helper functions
-
 func generateErrorID() string {
-	// Simple timestamp-based error ID
 	return fmt.Sprintf("ERR-%d", time.Now().UnixNano())
 }
 

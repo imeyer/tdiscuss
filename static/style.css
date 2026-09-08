@@ -22,6 +22,21 @@
     /* One gutter for the whole page */
     --gutter: 1.5rem;
 
+    /* Inline padding inside nav links and table cells. Elements that carry it
+       are pulled left by the same amount, so their *text* lands on the gutter
+       instead of the gutter plus their own padding. */
+    --nav-inset: 0.6rem;
+    --cell-inset: var(--sp-3);
+    --cell-pad-y: var(--sp-1);
+
+    /* Shell width. Wide enough for the threads and members tables. */
+    --shell-max: 1280px;
+
+    /* Reading measure for prose. Caps the text column at roughly 75
+       characters (WCAG 1.4.8 asks for <= 80) independently of the shell, so
+       the shell can be wide without long posts becoming a wall of text. */
+    --measure: 68ch;
+
     /* Radii: md for surfaces, sm for controls, lg for the container only */
     --r-sm: 6px;
     --r-md: 10px;
@@ -217,9 +232,9 @@ p:last-child {
 
 .section-title {
     font-size: 1rem;
+    margin-top: var(--sp-3);
     font-weight: 600;
     color: var(--text);
-    margin: var(--sp-2) 0 0;
 }
 
 /* Micro-caps: table headers, metadata keys, stat labels */
@@ -253,7 +268,7 @@ pre {
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-md);
     margin: 0 auto;
-    max-width: 1100px;
+    max-width: var(--shell-max);
     overflow: hidden;
 }
 
@@ -271,9 +286,10 @@ pre {
     margin-top: calc(var(--sp-4) * -0.5);
 }
 
-/* A heading sits with the block it introduces rather than floating between. */
-#main > .page-title + *,
-#main > .section-title + * {
+/* A heading sits with the block it introduces rather than floating between --
+   but never tightens against another heading. */
+#main > .page-title + *:not(.section-title),
+#main > .section-title + *:not(.section-title) {
     margin-top: calc(var(--sp-4) * -0.5);
 }
 
@@ -310,18 +326,20 @@ pre {
     text-decoration: none;
 }
 
+/* Offset by the link padding below, so the first link's text starts on the
+   gutter and lines up with the board title above it. */
 #menu {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-1);
-    padding: 0 var(--gutter) var(--sp-3);
+    padding: 0 calc(var(--gutter) - var(--nav-inset)) var(--sp-3);
 }
 
 #menu a {
     color: var(--text-2);
     font-size: 0.875rem;
-    padding: 0.3rem 0.6rem;
+    padding: 0.3rem var(--nav-inset);
     border-radius: var(--r-sm);
     transition: background-color var(--speed) ease, color var(--speed) ease;
 }
@@ -417,9 +435,35 @@ table {
 
 th,
 td {
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--cell-pad-y) var(--cell-inset);
     text-align: left;
 }
+
+/* A table that is the whole body of a page is the container's body: it drops
+   the gutter and its own box so the header row meets the header band, and its
+   outer cells pick the gutter back up so the columns still line up with the
+   board title and nav above them. */
+#main > .table-flush {
+    border: none;
+    border-radius: 0;
+    margin: calc(var(--gutter) * -1);
+    width: calc(100% + var(--gutter) * 2);
+}
+
+#main > .table-flush th:first-child,
+#main > .table-flush td:first-child {
+    padding-left: var(--gutter);
+}
+
+#main > .table-flush th:last-child,
+#main > .table-flush td:last-child {
+    padding-right: var(--gutter);
+}
+
+/* Every cell keeps its inline padding, including the outer two. #menu can sit
+   flush to the gutter because it draws no box of its own; a table is a
+   bordered panel, so zeroing the outer padding pressed the first and last
+   columns straight up against its border. */
 
 th {
     background-color: var(--surface-alt);
@@ -451,7 +495,6 @@ tbody tr:hover {
 .col-date {
     color: var(--text-2);
     font-size: 0.875rem;
-    white-space: nowrap;
 }
 
 .col-posts {
@@ -460,6 +503,32 @@ tbody tr:hover {
 
 .col-subject {
     font-weight: 500;
+}
+
+/* The title column takes all the slack; the meta columns shrink to their
+   content and group at the right edge instead of floating mid-row. */
+.col-subject {
+    width: 100%;
+}
+
+.col-user,
+.col-posts,
+.col-date {
+    width: 1%;
+    white-space: nowrap;
+}
+
+.member-admin-table th:first-child,
+.member-admin-table td:first-child {
+    width: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.member-admin-table th:not(:first-child),
+.member-admin-table td:not(:first-child) {
+    width: 1%;
+    white-space: nowrap;
 }
 
 .col-subject p {
@@ -483,6 +552,18 @@ tbody tr:hover {
 
 form:not(.inline-form) {
     padding: var(--sp-4);
+}
+
+/* Controls cap at the reading measure while the panel stays full width, so
+   forms align with the tables instead of stretching to 1280px of input. The
+   composer matching the measure also means what you type wraps where the
+   posted version will wrap. */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="url"],
+select {
+    max-width: var(--measure);
 }
 
 .form-group + .form-group {
@@ -629,6 +710,13 @@ input[type="button"]:hover,
     color: var(--text);
 }
 
+.threadpost-body > p,
+.threadpost-body > ul,
+.threadpost-body > ol,
+.threadpost-body > blockquote {
+    max-width: var(--measure);
+}
+
 .threadpost-body > :first-child {
     margin-top: 0;
 }
@@ -759,6 +847,7 @@ pre code {
 
 .profile-field-value {
     color: var(--text);
+    max-width: var(--measure);
     font-size: 0.9375rem;
     margin-top: 0.125rem;
 }
@@ -824,7 +913,7 @@ pre code {
 .admin-note {
     color: var(--text-3);
     font-size: 0.875rem;
-    max-width: 62ch;
+    max-width: var(--measure);
 }
 
 .member-tag {
@@ -842,13 +931,22 @@ pre code {
 
 .member-admin-table td {
     white-space: nowrap;
+    vertical-align: middle;
 }
 
 .member-admin-table .member-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--sp-2);
     align-items: center;
+}
+
+/* Flex items shrink by default, so the column's min-content collapsed to the
+   widest single child (a button) and the un-wrappable label overflowed into
+   `table { overflow: hidden }`. Holding the children at their natural size
+   makes the column measure the whole row of actions. */
+.member-admin-table .member-actions > * {
+    flex-shrink: 0;
 }
 
 .inline-form {
@@ -907,6 +1005,7 @@ pre code {
 
 .section-description {
     color: var(--text-2);
+    max-width: var(--measure);
     font-size: 0.9375rem;
     margin-bottom: var(--sp-4);
 }
@@ -1063,9 +1162,24 @@ pre code {
         font-size: 0.875rem;
     }
 
+    /* #container hides overflow, so a wide table must scroll itself rather
+       than be clipped. Once it scrolls, the member column stops absorbing
+       slack -- forcing it wide here just shatters the address mid-word. */
+    .member-admin-table {
+        display: block;
+        overflow-x: auto;
+    }
+
+    .member-admin-table th:first-child,
+    .member-admin-table td:first-child {
+        width: auto;
+        white-space: nowrap;
+        overflow-wrap: normal;
+    }
+
     th,
     td {
-        padding: var(--sp-2);
+        padding: var(--cell-pad-y) var(--sp-2);
     }
 }
 

@@ -36,7 +36,6 @@ type ObservabilityConfig struct {
 
 // newObservabilityMiddleware creates a comprehensive observability middleware
 func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
-	// Default sensitive headers if not provided
 	if len(config.SensitiveHeaders) == 0 {
 		config.SensitiveHeaders = []string{
 			"authorization",
@@ -45,7 +44,6 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 		}
 	}
 
-	// Default sensitive paths if not provided
 	if len(config.SensitivePaths) == 0 {
 		config.SensitivePaths = []string{
 			"/admin",
@@ -55,10 +53,8 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get or create request context
 			rc := getOrCreateRequestContext(r.Context())
 
-			// Start span
 			ctx, span := config.Tracer.Start(r.Context(),
 				fmt.Sprintf("%s %s", r.Method, r.URL.Path),
 				trace.WithSpanKind(trace.SpanKindServer),
@@ -73,21 +69,17 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 			)
 			defer span.End()
 
-			// Update request context with trace ID
 			if spanCtx := span.SpanContext(); spanCtx.IsValid() {
 				rc.TraceID = spanCtx.TraceID().String()
 			}
 
-			// Wrap response writer
 			wrapped := newResponseWriter(w)
 
-			// Track active requests
 			if config.ActiveRequests != nil {
 				config.ActiveRequests.Add(ctx, 1)
 				defer config.ActiveRequests.Add(ctx, -1)
 			}
 
-			// Log request start
 			if config.Logger != nil && config.SampleRate > 0 {
 				config.Logger.InfoContext(ctx, "request_started",
 					slog.String("method", r.Method),
@@ -100,16 +92,12 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 				)
 			}
 
-			// Execute handler
 			next.ServeHTTP(wrapped, r.WithContext(ctx))
 
-			// Calculate duration
 			duration := time.Since(rc.StartTime)
 
-			// Determine route pattern for metrics
 			routePattern := getRoutePattern(r.URL.Path)
 
-			// Common attributes for metrics
 			attrs := []attribute.KeyValue{
 				attribute.String("method", r.Method),
 				attribute.String("route", routePattern),
@@ -117,7 +105,6 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 				attribute.String("status_class", fmt.Sprintf("%dxx", wrapped.Status()/100)),
 			}
 
-			// Record metrics
 			if config.RequestCounter != nil {
 				config.RequestCounter.Add(ctx, 1, metric.WithAttributes(attrs...))
 			}
@@ -134,27 +121,23 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 				config.ResponseSize.Record(ctx, wrapped.BytesWritten(), metric.WithAttributes(attrs...))
 			}
 
-			// Record errors
 			if wrapped.Status() >= 400 && config.ErrorCounter != nil {
 				errorAttrs := append(attrs, attribute.String("error_type", getErrorType(wrapped.Status())))
 				config.ErrorCounter.Add(ctx, 1, metric.WithAttributes(errorAttrs...))
 			}
 
-			// Update span with response info
 			span.SetAttributes(
 				semconv.HTTPStatusCodeKey.Int(wrapped.Status()),
 				attribute.Int64("http.response_content_length", wrapped.BytesWritten()),
 				attribute.Float64("http.request.duration_ms", float64(duration.Milliseconds())),
 			)
 
-			// Set span status based on HTTP status
 			if wrapped.Status() >= 400 {
 				span.SetStatus(codes.Error, http.StatusText(wrapped.Status()))
 			} else {
 				span.SetStatus(codes.Ok, "")
 			}
 
-			// Log request completion
 			if config.Logger != nil && config.SampleRate > 0 {
 				logLevel := slog.LevelInfo
 				if wrapped.Status() >= 500 {
@@ -181,7 +164,6 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 
 // getRoutePattern normalizes URL paths for metrics to avoid high cardinality
 func getRoutePattern(path string) string {
-	// Common patterns to normalize
 	patterns := []struct {
 		prefix  string
 		pattern string
@@ -194,17 +176,14 @@ func getRoutePattern(path string) string {
 
 	for _, p := range patterns {
 		if strings.HasPrefix(path, p.prefix) {
-			// Check if there's more path after the prefix
 			remaining := path[len(p.prefix):]
 			if idx := strings.Index(remaining, "/"); idx > 0 {
-				// There's a subpath, so use the pattern + subpath
 				return p.pattern + remaining[idx:]
 			}
 			return p.pattern
 		}
 	}
 
-	// For root and other exact paths, return as-is
 	return path
 }
 
@@ -250,27 +229,22 @@ func loggingMiddleware(logger *slog.Logger) Middleware {
 			rc := getOrCreateRequestContext(r.Context())
 			wrapped := newResponseWriter(w)
 
-			// Add request ID to logger
 			requestLogger := logger.With(
 				slog.String("request_id", rc.RequestID),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 			)
 
-			// Store logger in context for handlers to use
 			ctx := r.Context()
 			ctx = context.WithValue(ctx, contextKey("logger"), requestLogger)
 
-			// Log request
 			requestLogger.DebugContext(ctx, "request_received",
 				slog.String("remote_addr", r.RemoteAddr),
 				slog.String("user_agent", r.UserAgent()),
 			)
 
-			// Execute handler
 			next.ServeHTTP(wrapped, r.WithContext(ctx))
 
-			// Log response
 			duration := time.Since(rc.StartTime)
 			requestLogger.InfoContext(ctx, "request_completed",
 				slog.Int("status", wrapped.Status()),
@@ -310,7 +284,6 @@ func metricsMiddleware(meter metric.Meter) Middleware {
 
 			duration := time.Since(start)
 
-			// Record metrics
 			attrs := []attribute.KeyValue{
 				attribute.String("method", r.Method),
 				attribute.String("route", getRoutePattern(r.URL.Path)),

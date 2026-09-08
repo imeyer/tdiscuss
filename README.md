@@ -20,12 +20,237 @@ enough to donate an Intel macOS runner, we'll happily add it back to releases.
 
 ## Running for development
 
-1. Be a [tailscale](https://tailscale.com) user
-1. Have an [auth key](https://login.tailscale.com/admin/settings/keys) created for the last step in this list.
+`make help` lists every target. The short version:
+
+1. Be a [tailscale](https://tailscale.com) user, with `podman` or `docker`
+   installed for the dev database.
 1. Grant yourself admin in your tailnet policy file — see [Admin access](#admin-access). Doing this before the first launch means you are an admin on your first request; there is no automatic admin.
-1. Set up a PostgreSQL database version 17+ (see [README.database-setup.md](README.database-setup.md))
-1. `psql < sqlc/schema.sql`
-2. `DATABASE_URL=<valid dsn> TS_AUTHKEY=<key from step 2> make run-binary`
+1. Give `make dev` a way to register the node on your tailnet — either an
+   [auth key](https://login.tailscale.com/admin/settings/keys) in `TS_AUTHKEY`,
+   or an OAuth client (see below) so it registers itself on every run.
+1. `make dev`
+
+`make dev` does the whole dev environment: starts a PostgreSQL container and
+loads the schema, registers the node on your tailnet, and runs the binary as
+**`discuss-dev`** with `-debug` on. tsnet state lives under `.dev/discuss-dev/`,
+never your production state in `~/.config`. Override anything on the command
+line: `make dev DEV_HOSTNAME=discuss-ian DEV_DB_PORT=5544`.
+
+### The dev database
+
+`make dev` brings up `postgres:17-alpine` as the container `tdiscuss-dev-db`,
+bound to **127.0.0.1:5433** — not 5432, so it cannot collide with a Postgres
+you already run — with trust auth, a named volume for its data, and
+`sqlc/schema.sql` loaded on first start. That gives
+`postgres://discuss@127.0.0.1:5433/discuss`.
+
+It is safe to run repeatedly: an existing container is started rather than
+recreated, and the schema is only loaded when `board_data` is absent, so your
+test threads survive a restart.
+
+| Target | |
+|---|---|
+| `make dev-db` | start it and load the schema, without running the app |
+| `make dev-db-psql` | a `psql` shell on it |
+| `make dev-db-stop` | stop the container, keep the data |
+| `make dev-db-reset` | destroy container **and data**, then rebuild empty |
+
+**To use your own Postgres instead, set `DATABASE_URL`** — in the env file
+below, or per-run (`DATABASE_URL=... make dev`). When it is set, `make dev`
+touches no containers at all, and you are responsible for the schema
+(`psql < sqlc/schema.sql`; see
+[README.database-setup.md](README.database-setup.md)). `make clean-db` is the
+older host-Postgres reset and is unrelated to the container.
+
+### Automatic tailnet registration
+
+If `TS_AUTHKEY` is set, `make dev` uses that key as-is and none of this
+applies. Otherwise it runs `./dev-authkey.sh`, which mints a fresh key through
+the Tailscale API. Setting that up is three steps, and **the order matters** —
+the tag has to exist in your policy file before the OAuth client can be granted
+it.
+
+**1. Declare the dev tag in your [policy
+file](https://login.tailscale.com/admin/acls/file).** `tagOwners` is what makes
+the tag selectable in step 2; the grants are what let you reach the dev board
+and be an admin on it:
+
+```json
+{
+  "tagOwners": {
+    "tag:discuss-dev": ["autogroup:admin"]
+  },
+  "grants": [
+    {
+      "src": ["autogroup:member"],
+      "dst": ["tag:discuss-dev"],
+      "ip":  ["80", "443", "9090"]
+    },
+    {
+      "src": ["you@example.com"],
+      "dst": ["tag:discuss-dev"],
+      "app": {
+        "github.com/imeyer/tdiscuss/cap/board": [{"role": "admin"}]
+      }
+    }
+  ]
+}
+```
+
+Save the policy file before moving on. (Port 9090 is the debug/metrics
+listener — handy in dev, drop it if you don't want it. See [Tailnet
+ports](#tailnet-ports) and [Admin access](#admin-access).)
+
+**2. Create an OAuth client** at [Settings › Keys ›
+OAuth clients](https://login.tailscale.com/admin/settings/oauth) → **Generate
+OAuth client…**. In the dialog:
+
+- Give it a description, e.g. `tdiscuss dev`.
+- Find the **Keys** scope group and check **Write** on **Auth Keys**. Read
+  access is not enough, and this is the only scope the script needs — leave the
+  rest unchecked.
+- Checking that box reveals a **tags** selector directly underneath it. Pick
+  `tag:discuss-dev`. This selector only lists tags already in `tagOwners`, so
+  if it is empty or the tag is missing, step 1 hasn't been saved yet. A key can
+  only ever be minted for a tag the client holds here.
+- **Generate client.**
+
+The client ID and secret are shown once. The secret starts with `tskey-client-`
+and is *not* an auth key — don't put it in `TS_AUTHKEY`.
+
+**3. Put the client where the dev run can find it.** The client ID is not a
+secret; the secret is, and unlike an auth key it does not expire, so treat it
+like a password. `make dev-env` creates a file for it, mode `0600`, outside the
+repo:
+
+```sh
+make dev-env          # creates ~/.config/tdiscuss/dev.env
+$EDITOR ~/.config/tdiscuss/dev.env
+```
+
+Fill in the two lines it left blank:
+
+```sh
+TS_API_CLIENT_ID=k123ABCDEF
+TS_API_CLIENT_SECRET=tskey-client-...
+```
+
+That's it — `make dev` loads the file, and so does `./dev-authkey.sh` when you
+run it directly. Anything else you want in the dev environment can go in there
+too, `DATABASE_URL` included. Values already in your environment win, so
+`DATABASE_URL=... make dev` still overrides the file for one run.
+
+Both the Makefile and the script **refuse to read the file if anyone but you
+can**, since a `0644` secret is a secret shared with every account on the
+machine. If you ever see that error, `chmod 600 ~/.config/tdiscuss/dev.env`.
+`DEV_ENV_FILE` (make) and `TDISCUSS_DEV_ENV` (the script) move the file
+elsewhere.
+
+If you would rather no secret sat in plaintext at all, put it in your keyring
+and give the script a command that reads it back instead:
+
+```sh
+secret-tool store --label='tdiscuss dev OAuth' service tdiscuss-dev key client-secret
+
+# in the env file, or your shell rc - no secret material in either line
+TS_API_CLIENT_ID=k123ABCDEF
+TS_API_CLIENT_SECRET_CMD='secret-tool lookup service tdiscuss-dev key client-secret'
+```
+
+Any command that prints the secret on stdout works — `op read
+op://Private/tdiscuss-dev/credential`, `pass show tailscale/tdiscuss-dev`,
+`gpg -dq ~/.secrets/tdiscuss-dev.gpg`. `TS_API_CLIENT_ID_CMD` does the same for
+the ID.
+
+#### Keeping the client secret safe
+
+What the secret can do, if it leaks, is bounded by the tag: it mints keys that
+can only create devices tagged `tag:discuss-dev`, and those devices can only
+reach what your policy file lets that tag reach. So write the dev tag's grants
+as narrowly as you would any other — `dst: tag:discuss-dev` rules let people
+reach the board without giving the board's node any access outbound. Use a
+separate tag from production (`tag:tdiscuss`), one OAuth client per machine,
+named for that machine, and delete the client when you stop using it.
+
+Where to put it, best to worst:
+
+1. **A keyring or password manager, read on demand** via
+   `TS_API_CLIENT_SECRET_CMD`. The value exists only inside the one
+   `dev-authkey.sh` process, for the length of one API call. Nothing on disk in
+   the clear, nothing in your shell history, nothing to commit, and no
+   unrelated process inherits it.
+2. **`~/.config/tdiscuss/dev.env`, mode `0600`** — what `make dev-env` sets up.
+   Plaintext at rest, readable only by you, out of the working tree, and loaded
+   only by the dev run rather than by every shell you open.
+3. **`export TS_API_CLIENT_SECRET=...` in your shell rc.** Works, but now every
+   process you launch from that shell carries the secret in its environment,
+   and it sits in a file you may well keep in a dotfiles repo.
+
+Never put it in a `.envrc` committed to this repo, and never pass it as a
+command-line argument to anything: on Linux `/proc/<pid>/cmdline` is readable
+by any user on the machine, so an argument is a broadcast. `dev-authkey.sh`
+feeds both the secret and the resulting API token to `curl` on stdin
+(`curl --config -`) for exactly that reason, and unsets the credential
+variables so `curl` does not inherit them.
+
+The key the script mints is much less sensitive: single-use, ephemeral, and
+expires in an hour (`DEV_KEY_EXPIRY`). It reaches the binary through the
+environment rather than argv. `make dev-authkey` prints one to your terminal,
+so it lands in scrollback — fine for a smoke test, but that is a live key until
+it is used or expires.
+
+If the API call fails, `dev-authkey.sh` prints Tailscale's own message. The one
+you are most likely to hit first:
+
+```
+auth key request: HTTP 400
+  requested tags [tag:discuss-dev] are invalid or not permitted
+```
+
+The tag has to be in **both** places — `tagOwners` in the policy file *and*
+granted to the OAuth client — and **a client's tags are fixed when you generate
+it**. So a client created before the tag existed in the policy file holds no
+tags, and no amount of policy-file editing afterwards will fix it. The OAuth
+clients page lists each client's tags in its row; if that list is empty or
+lacks the tag, add the tag to the policy file, then delete the client and
+generate a new one. `make dev DEV_TAGS=tag:something` uses a tag the client
+already holds instead.
+
+#### If the node comes up as `discuss-dev-1`
+
+```
+msg="tsnet running" certDomains="[discuss-dev-1.cougar-monitor.ts.net]"
+msg="error expanding SNI name"
+msg="listening on https://"
+```
+
+A device named `discuss-dev` already exists in the tailnet, so control gave the
+new node the next free name. Check with `tailscale status | grep discuss` —
+it is usually an *offline* node from an old run still holding the name.
+
+The empty `https://` in the log is a consequence, not a TLS failure:
+`expandSNIName` asks for the FQDN of the `-hostname` you passed, and
+`ExpandSNIName` only matches a cert domain whose next character is a `.`, so
+`discuss-dev` does not match `discuss-dev-1.cougar-monitor.ts.net`. HTTPS
+itself is served by `tsnet`'s own `ListenTLS`, which uses the node's real name,
+so the board is reachable at `https://discuss-dev-1.cougar-monitor.ts.net`
+while that log line stays blank.
+
+To get the name back:
+
+1. Delete the stale device in the [admin
+   console](https://login.tailscale.com/admin/machines).
+2. `make dev-clean`, so tsnet re-registers instead of reusing the identity in
+   its state directory.
+
+Step 2 matters. `Authkey is set; but state is Starting. Ignoring authkey` in
+the log means tsnet found existing state and kept the identity it already has —
+including the `-1` name — so deleting the device alone changes nothing. (
+`TSNET_FORCE_LOGIN=1` forces the key to be used instead.)
+
+`403 calling actor does not have enough permissions` means the client is
+missing the Keys › Auth Keys write scope, and `401 invalid client credentials`
+means the ID or secret is wrong or the client has been deleted.
 
 ## Running for production
 

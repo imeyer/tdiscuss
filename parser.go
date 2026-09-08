@@ -35,7 +35,6 @@ func parseMarkdownToHTML(text string) (result string) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			emoji.Emoji,
-			// GFM extensions individually
 			extension.Strikethrough,
 			extension.Table,
 			extension.TaskList,
@@ -50,7 +49,7 @@ func parseMarkdownToHTML(text string) (result string) {
 	)
 
 	if err := md.Convert([]byte(text), &buf); err != nil {
-		return text // Fall back to the original text on error
+		return text
 	}
 
 	return buf.String()
@@ -79,16 +78,13 @@ func bodyPolicy() *bluemonday.Policy {
 	p.AllowElements("blockquote", "pre")
 	p.AllowElements("ul", "ol", "li", "dl", "dt", "dd")
 
-	// Inline formatting
 	p.AllowElements("b", "i", "strong", "em", "u", "s", "strike", "del", "ins")
 	p.AllowElements("sub", "sup", "small", "mark")
 	p.AllowElements("abbr", "acronym", "cite", "dfn", "kbd", "samp", "var")
 
-	// Code
 	p.AllowElements("code")
 	p.AllowAttrs("class").Matching(regexp.MustCompile(`^language-[\w-]+$`)).OnElements("code")
 
-	// Links
 	p.AllowAttrs("href").OnElements("a")
 	p.AllowAttrs("title").OnElements("a")
 	p.AllowRelativeURLs(true)
@@ -96,7 +92,6 @@ func bodyPolicy() *bluemonday.Policy {
 	p.RequireNoReferrerOnLinks(true)
 	p.AddTargetBlankToFullyQualifiedLinks(true)
 
-	// Images
 	p.AllowImages()
 
 	// Task lists (GFM)

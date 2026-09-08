@@ -12,9 +12,6 @@ import (
 
 // Re-export commonly used types and functions for convenience
 
-// Core middleware types are already defined in middleware_core.go:
-// - Middleware as a function type
-
 // Chain operations
 var (
 	// NewChain creates a new middleware chain
@@ -89,18 +86,9 @@ var (
 	// TracingMiddleware provides distributed tracing
 	TracingMiddleware = tracingMiddleware
 
-	// RecoveryMiddleware recovers from panics
-	// RecoveryMiddleware = recoveryMiddleware // Note: recoveryMiddleware not found in codebase
-
 	// StaticFileMiddleware handles static file serving
 	StaticFileMiddleware = staticFileMiddleware
 )
-
-// Configuration types are already exported from their respective files:
-// - SecurityConfig from middleware_security.go
-// - RateLimitConfig from middleware_ratelimit.go
-// - ObservabilityConfig from middleware_observability.go
-// - EndpointLimit from middleware_ratelimit.go
 
 // Default configurations
 var (
@@ -150,6 +138,3 @@ func RequireAuthMiddleware() Middleware {
 func RequireAdminMiddleware() Middleware {
 	return requireAdminMiddleware()
 }
-
-// NewMiddlewareSetup creates a new middleware setup - delegated to middleware_setup.go
-// This function is defined in middleware_setup.go
