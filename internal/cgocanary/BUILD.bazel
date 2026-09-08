@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "cgocanary",
+    srcs = ["cgocanary.go"],
+    cgo = True,
+    importpath = "github.com/imeyer/tdiscuss/internal/cgocanary",
+    visibility = ["//:__subpackages__"],
+)
+
+# Build canary: this is the only test target in the repo that compiles and
+# links C, so it is what catches a rules_go/Go SDK mismatch on the cheap amd64
+# runner instead of on the macOS one. See cgocanary.go for the full story.
+#
+# pure is pinned "off" deliberately. Left unset it defaults to auto, and any
+# future global pure setting would silently turn this into a no-op test.
+go_test(
+    name = "cgocanary_test",
+    size = "small",
+    srcs = ["cgocanary_test.go"],
+    embed = [":cgocanary"],
+    pure = "off",
+)
