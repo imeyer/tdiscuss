@@ -18,6 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # --new-from-rev below needs the base commit, not just the tip.
+          fetch-depth: 0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: 1.27.1
@@ -28,7 +31,7 @@ jobs:
           # Require: The version of golangci-lint to use.
           # When `install-mode` is `binary` (default) the value can be v1.2 or v1.2.3 or `latest` to use the latest version.
           # When `install-mode` is `goinstall` the value can be v1.2.3, `latest`, or the hash of a commit.
-          version: v2.12.2
+          version: v2.13.2
 
           # Optional: working directory, useful for monorepos
           # working-directory: somedir
@@ -37,7 +40,9 @@ jobs:
           #
           # Note: By default, the `.golangci.yml` file should be at the root of the repository.
           # The location of the configuration file can be changed by using `--config=`
-          args: --timeout=5m --issues-exit-code=0 --new-from-rev=origin/${{ github.base_ref }} --output.sarif.path  --config=.golangci.yml
+          # base_ref is only set on pull_request; on push there is no base
+          # branch, so diff against the previous commit instead.
+          args: --timeout=5m --issues-exit-code=0 --new-from-rev=${{ github.base_ref && format('origin/{0}', github.base_ref) || 'HEAD~1' }} --output.sarif.path  --config=.golangci.yaml
 
           # Optional: show only new issues if it's a pull request. The default value is `false`.
           # only-new-issues: true
