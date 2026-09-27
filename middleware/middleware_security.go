@@ -120,7 +120,7 @@ func securityHeadersMiddleware(config *SecurityConfig) Middleware {
 }
 
 // csrfProtectionMiddleware provides CSRF protection using Go 1.25's built-in CrossOriginProtection
-func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
+func csrfProtectionMiddleware(config *SecurityConfig, renderError ErrorRenderer) Middleware {
 	if config == nil {
 		config = defaultSecurityConfig()
 	}
@@ -144,7 +144,8 @@ func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if err := protection.Check(r); err != nil {
-				http.Error(w, "Cross-origin request rejected", http.StatusForbidden)
+				renderError(w, r, http.StatusForbidden,
+					"That form was sent from a different site, so it was rejected. Reload the page and try again.")
 				return
 			}
 
@@ -155,14 +156,14 @@ func csrfProtectionMiddleware(config *SecurityConfig) Middleware {
 
 
 // requestSizeLimitMiddleware limits request body size
-func requestSizeLimitMiddleware(maxSize int64) Middleware {
+func requestSizeLimitMiddleware(maxSize int64, renderError ErrorRenderer) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only limit methods that typically have bodies
 			if r.Method == "POST" || r.Method == "PUT" || r.Method == "PATCH" {
 				if r.ContentLength > maxSize {
-					http.Error(w, fmt.Sprintf("Request body too large. Maximum size: %d bytes", maxSize),
-						http.StatusRequestEntityTooLarge)
+					renderError(w, r, http.StatusRequestEntityTooLarge,
+						fmt.Sprintf("That submission is too large. The limit is %s.", formatSize(maxSize)))
 					return
 				}
 
@@ -172,6 +173,17 @@ func requestSizeLimitMiddleware(maxSize int64) Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// formatSize writes a byte limit the way a person would: 1048576 is "1 MB".
+func formatSize(n int64) string {
+	switch {
+	case n >= 1<<20 && n%(1<<20) == 0:
+		return fmt.Sprintf("%d MB", n>>20)
+	case n >= 1<<10 && n%(1<<10) == 0:
+		return fmt.Sprintf("%d KB", n>>10)
+	}
+	return fmt.Sprintf("%d bytes", n)
 }
 
 func buildCSP(directives map[string]string) string {

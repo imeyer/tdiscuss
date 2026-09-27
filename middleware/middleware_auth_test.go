@@ -69,7 +69,7 @@ func TestAuthMiddleware_BlockedUser(t *testing.T) {
 				IsBlocked: true,
 			},
 			expectedStatus: http.StatusNotFound,
-			expectedBody:   "404 page not found\n",
+			expectedBody:   "Not Found\n",
 		},
 		{
 			name: "non-blocked user passes through",
@@ -104,7 +104,7 @@ func TestAuthMiddleware_BlockedUser(t *testing.T) {
 
 			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
-			middleware := authMiddleware(provider, nil)
+			middleware := authMiddleware(provider, nil, plainTextErrors)
 
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -161,7 +161,7 @@ func TestAuthMiddleware_Errors(t *testing.T) {
 
 			provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
 
-			middleware := authMiddleware(provider, nil)
+			middleware := authMiddleware(provider, nil, plainTextErrors)
 
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -298,7 +298,7 @@ func TestAuthMiddleware_TaggedNodeUnauthorized(t *testing.T) {
 	mockQueries := &countingQuerier{}
 
 	provider := newTailscaleAuthProvider(mockClient, mockQueries, NewTestLogger(), TailscaleAuthConfig{})
-	wrapped := authMiddleware(provider, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	wrapped := authMiddleware(provider, nil, plainTextErrors)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("handler must not be reached by a tagged node")
 	}))
 
@@ -394,7 +394,7 @@ func TestTailscaleAuthProvider_CreateOrGetUser(t *testing.T) {
 }
 
 func TestRequireAuthMiddleware(t *testing.T) {
-	middleware := requireAuthMiddleware()
+	middleware := requireAuthMiddleware(plainTextErrors)
 
 	tests := []struct {
 		name           string
@@ -443,7 +443,7 @@ func TestRequireAuthMiddleware(t *testing.T) {
 }
 
 func TestRequireAdminMiddleware(t *testing.T) {
-	middleware := requireAdminMiddleware()
+	middleware := requireAdminMiddleware(plainTextErrors)
 
 	tests := []struct {
 		name           string

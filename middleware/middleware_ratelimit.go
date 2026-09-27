@@ -16,20 +16,26 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// RateLimitConfig holds rate limiting configuration
+// RateLimitConfig holds rate limiting configuration.
+//
+// A chain applies two kinds of limit. Middleware runs before authentication
+// and counts every request against a per-device bucket, keyed by the client's
+// tailnet address, so a flood stops before the WhoIs call and member lookup
+// that authenticating each request costs. EndpointMiddleware runs after
+// authentication and counts requests to the routes in EndpointLimits against a
+// per-member bucket for that route, so a member's limit on, say, posting
+// replies is the same however many devices they use.
 type RateLimitConfig struct {
-	// Default rate limit
+	// Per-device limit for every request.
 	RequestsPerSecond float64
 	Burst             int
 
-	// Per-endpoint limits
+	// Per-member limits for particular routes. Keys are ServeMux patterns
+	// exactly as registered, such as "POST /thread/{tid}"; a request matches
+	// when its r.Pattern equals the key. Each route has its own bucket.
 	EndpointLimits map[string]EndpointLimit
 
-	EnableUserRateLimit bool
-	UserRateMultiplier  float64 // Multiplier for authenticated users
-
-	EnableIPRateLimit bool
-	CleanupInterval   time.Duration
+	CleanupInterval time.Duration
 
 	IncludeHeaders bool
 
@@ -37,38 +43,30 @@ type RateLimitConfig struct {
 	MetricPrefix string
 }
 
-// EndpointLimit defines rate limits for specific endpoints
+// EndpointLimit is the rate and burst for one route in EndpointLimits.
 type EndpointLimit struct {
-	Pattern string
-	Rate    float64
-	Burst   int
+	Rate  float64
+	Burst int
 }
 
-// defaultRateLimitConfig returns sensible defaults
+// defaultRateLimitConfig returns sensible defaults. Endpoint limits name the
+// application's routes, so the application sets them.
 func defaultRateLimitConfig() *RateLimitConfig {
 	return &RateLimitConfig{
-		RequestsPerSecond:   10,
-		Burst:               20,
-		EnableUserRateLimit: true,
-		UserRateMultiplier:  5.0,
-		EnableIPRateLimit:   true,
-		CleanupInterval:     5 * time.Minute,
-		IncludeHeaders:      true,
-		EndpointLimits: map[string]EndpointLimit{
-			"/thread/new":     {Pattern: "/thread/new", Rate: 0.5, Burst: 2},   // 1 thread per 2 seconds
-			"/thread/*/reply": {Pattern: "/thread/*/reply", Rate: 2, Burst: 5}, // 2 replies per second
-			"/member/edit":    {Pattern: "/member/edit", Rate: 0.5, Burst: 2},  // 1 profile update per 2 seconds
-			"/admin":          {Pattern: "/admin", Rate: 0.2, Burst: 1},        // 1 admin action per 5 seconds
-		},
+		RequestsPerSecond: 10,
+		Burst:             20,
+		CleanupInterval:   5 * time.Minute,
+		IncludeHeaders:    true,
 	}
 }
 
 // RateLimiter provides flexible rate limiting
 type RateLimiter struct {
-	config   *RateLimitConfig
-	logger   *slog.Logger
-	visitors map[string]*visitor
-	mu       sync.RWMutex
+	config      *RateLimitConfig
+	logger      *slog.Logger
+	renderError ErrorRenderer
+	visitors    map[string]*visitor
+	mu          sync.RWMutex
 
 	rateLimitHits  metric.Int64Counter
 	activeVisitors metric.Int64Gauge
@@ -80,11 +78,12 @@ type visitor struct {
 }
 
 // newRateLimiter creates a new rate limiter
-func newRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
+func newRateLimiter(config *RateLimitConfig, logger *slog.Logger, renderError ErrorRenderer) *RateLimiter {
 	rl := &RateLimiter{
-		config:   config,
-		logger:   logger,
-		visitors: make(map[string]*visitor),
+		config:      config,
+		logger:      logger,
+		renderError: renderError,
+		visitors:    make(map[string]*visitor),
 	}
 
 	if config.Meter != nil {
@@ -111,69 +110,67 @@ func newRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
 	return rl
 }
 
-// Middleware returns the rate limiting middleware
+// Middleware limits every request per device, keyed by the client's tailnet
+// address. Chains put it before authentication.
 func (rl *RateLimiter) Middleware() Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			visitorKey := rl.getVisitorKey(r)
-
-			limit, burst := rl.getLimitsForPath(r.URL.Path)
-
-			v := rl.getVisitor(visitorKey, limit, burst)
-
-			if !v.limiter.Allow() {
-				rl.handleRateLimitExceeded(w, r, v.limiter)
+			key := "ip:" + getClientIP(r)
+			if !rl.allow(w, r, key, rl.config.RequestsPerSecond, rl.config.Burst) {
 				return
 			}
-
-			if rl.config.IncludeHeaders {
-				rl.addRateLimitHeaders(w, v.limiter)
-			}
-
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// getVisitorKey determines the key for rate limiting
-func (rl *RateLimiter) getVisitorKey(r *http.Request) string {
-	if rl.config.EnableUserRateLimit {
-		if user, ok := getUser(r.Context()); ok && user != nil {
-			return fmt.Sprintf("user:%d", user.ID)
-		}
-	}
+// EndpointMiddleware limits requests to the routes in EndpointLimits, per
+// member and per route. Chains put it after authentication; a request with no
+// member falls back to its device.
+func (rl *RateLimiter) EndpointMiddleware() Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limit, ok := rl.config.EndpointLimits[r.Pattern]
+			if !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-	if rl.config.EnableIPRateLimit {
-		return "ip:" + getClientIP(r)
+			who := "ip:" + getClientIP(r)
+			if user, ok := getUser(r.Context()); ok && user != nil {
+				who = fmt.Sprintf("user:%d", user.ID)
+			}
+			if !rl.allow(w, r, who+" "+r.Pattern, limit.Rate, limit.Burst) {
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
-
-	// If neither is enabled, use a global key (not recommended)
-	return "global"
 }
 
-// getLimitsForPath returns rate limits for a specific path
-func (rl *RateLimiter) getLimitsForPath(path string) (float64, int) {
-	for pattern, limit := range rl.config.EndpointLimits {
-		if matchesPattern(path, pattern) {
-			return limit.Rate, limit.Burst
-		}
+// allow takes a token from the bucket for key, creating the bucket with limit
+// and burst the first time key is seen. When the bucket is empty it sends the
+// 429 and returns false.
+func (rl *RateLimiter) allow(w http.ResponseWriter, r *http.Request, key string, limit float64, burst int) bool {
+	v := rl.getVisitor(r.Context(), key, limit, burst)
+	if !v.limiter.Allow() {
+		rl.handleRateLimitExceeded(w, r, key, v.limiter)
+		return false
 	}
 
-	return rl.config.RequestsPerSecond, rl.config.Burst
+	if rl.config.IncludeHeaders {
+		rl.addRateLimitHeaders(w, v.limiter)
+	}
+	return true
 }
 
-// getVisitor gets or creates a visitor
-func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor {
+// getVisitor gets or creates the bucket for key
+func (rl *RateLimiter) getVisitor(ctx context.Context, key string, limit float64, burst int) *visitor {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
 	v, exists := rl.visitors[key]
 	if !exists {
-		if strings.HasPrefix(key, "user:") && rl.config.UserRateMultiplier > 0 {
-			limit *= rl.config.UserRateMultiplier
-			burst = int(float64(burst) * rl.config.UserRateMultiplier)
-		}
-
 		v = &visitor{
 			limiter:  rate.NewLimiter(rate.Limit(limit), burst),
 			lastSeen: time.Now(),
@@ -181,7 +178,7 @@ func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor
 		rl.visitors[key] = v
 
 		if rl.activeVisitors != nil {
-			rl.activeVisitors.Record(context.Background(), int64(len(rl.visitors)))
+			rl.activeVisitors.Record(ctx, int64(len(rl.visitors)))
 		}
 	} else {
 		v.lastSeen = time.Now()
@@ -191,8 +188,7 @@ func (rl *RateLimiter) getVisitor(key string, limit float64, burst int) *visitor
 }
 
 // handleRateLimitExceeded handles rate limit exceeded responses
-func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Request, limiter *rate.Limiter) {
-	visitorKey := rl.getVisitorKey(r)
+func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Request, visitorKey string, limiter *rate.Limiter) {
 	rl.logger.WarnContext(r.Context(), "rate limit exceeded",
 		slog.String("visitor", visitorKey),
 		slog.String("path", r.URL.Path),
@@ -203,7 +199,7 @@ func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Re
 	if rl.rateLimitHits != nil {
 		attrs := []attribute.KeyValue{
 			attribute.String("visitor_type", getVisitorType(visitorKey)),
-			attribute.String("path", getRoutePattern(r.URL.Path)),
+			attribute.String("path", routeLabel(r)),
 		}
 		rl.rateLimitHits.Add(r.Context(), 1, metric.WithAttributes(attrs...))
 	}
@@ -218,7 +214,8 @@ func (rl *RateLimiter) handleRateLimitExceeded(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	http.Error(w, "Rate limit exceeded. Please try again later.", http.StatusTooManyRequests)
+	rl.renderError(w, r, http.StatusTooManyRequests,
+		"You're sending requests too quickly. Wait a few seconds and try again.")
 }
 
 // addRateLimitHeaders adds rate limit information headers
@@ -226,11 +223,13 @@ func (rl *RateLimiter) addRateLimitHeaders(w http.ResponseWriter, limiter *rate.
 	limit := limiter.Limit()
 	burst := limiter.Burst()
 
-	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(burst))
-	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(int(limiter.Tokens())))
-	w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(time.Now().Add(time.Second).Unix(), 10))
+	// Spelled as Go sends them: Header.Set canonicalizes every name, so
+	// "X-RateLimit-Limit" would go out as X-Ratelimit-Limit anyway.
+	w.Header().Set("X-Ratelimit-Limit", strconv.Itoa(burst))
+	w.Header().Set("X-Ratelimit-Remaining", strconv.Itoa(int(limiter.Tokens())))
+	w.Header().Set("X-Ratelimit-Reset", strconv.FormatInt(time.Now().Add(time.Second).Unix(), 10))
 
-	w.Header().Set("X-RateLimit-Policy", fmt.Sprintf("%.2f;w=1;burst=%d", limit, burst))
+	w.Header().Set("X-Ratelimit-Policy", fmt.Sprintf("%.2f;w=1;burst=%d", limit, burst))
 }
 
 // cleanupVisitors removes old visitors periodically
@@ -272,21 +271,6 @@ func getClientIP(r *http.Request) string {
 		return addr.String()
 	}
 	return r.RemoteAddr
-}
-
-func matchesPattern(path, pattern string) bool {
-	// Simple pattern matching with * wildcard
-	if !strings.Contains(pattern, "*") {
-		return path == pattern
-	}
-
-	parts := strings.Split(pattern, "*")
-	if len(parts) != 2 {
-		return false
-	}
-
-	prefix, suffix := parts[0], parts[1]
-	return strings.HasPrefix(path, prefix) && strings.HasSuffix(path, suffix)
 }
 
 func getVisitorType(key string) string {

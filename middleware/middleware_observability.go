@@ -56,7 +56,7 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 			rc := getOrCreateRequestContext(r.Context())
 
 			ctx, span := config.Tracer.Start(r.Context(),
-				fmt.Sprintf("%s %s", r.Method, r.URL.Path),
+				methodLabel(r.Method)+" "+routeLabel(r),
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
 					semconv.HTTPMethodKey.String(r.Method),
@@ -96,11 +96,9 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 
 			duration := time.Since(rc.StartTime)
 
-			routePattern := getRoutePattern(r.URL.Path)
-
 			attrs := []attribute.KeyValue{
-				attribute.String("method", r.Method),
-				attribute.String("route", routePattern),
+				attribute.String("method", methodLabel(r.Method)),
+				attribute.String("route", routeLabel(r)),
 				attribute.Int("status_code", wrapped.Status()),
 				attribute.String("status_class", fmt.Sprintf("%dxx", wrapped.Status()/100)),
 			}
@@ -162,29 +160,34 @@ func newObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 	}
 }
 
-// getRoutePattern normalizes URL paths for metrics to avoid high cardinality
-func getRoutePattern(path string) string {
-	patterns := []struct {
-		prefix  string
-		pattern string
-	}{
-		{"/thread/", "/thread/{tid}"},
-		{"/member/", "/member/{id}"},
-		{"/api/v1/thread/", "/api/v1/thread/{tid}"},
-		{"/api/v1/member/", "/api/v1/member/{id}"},
+// routeLabel names the route a request matched, for metric labels and span
+// names: its ServeMux pattern without the method, or "unmatched" when only
+// the catch-all "/" matched (or no ServeMux routed it). Unlike the raw path it
+// has one value per route, so requests for made-up URLs cannot create new
+// metric series, and a rise in "unmatched" shows someone probing.
+func routeLabel(r *http.Request) string {
+	pattern := r.Pattern
+	if _, path, ok := strings.Cut(pattern, " "); ok {
+		pattern = path
 	}
-
-	for _, p := range patterns {
-		if strings.HasPrefix(path, p.prefix) {
-			remaining := path[len(p.prefix):]
-			if idx := strings.Index(remaining, "/"); idx > 0 {
-				return p.pattern + remaining[idx:]
-			}
-			return p.pattern
-		}
+	switch pattern {
+	case "", "/":
+		return "unmatched"
+	case "/{$}":
+		return "/"
 	}
+	return pattern
+}
 
-	return path
+// methodLabel is method for the standard HTTP methods and "other" for
+// anything else, since a client can send any token as a method.
+func methodLabel(method string) string {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+		http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace:
+		return method
+	}
+	return "other"
 }
 
 // getErrorType categorizes HTTP errors
@@ -285,8 +288,8 @@ func metricsMiddleware(meter metric.Meter) Middleware {
 			duration := time.Since(start)
 
 			attrs := []attribute.KeyValue{
-				attribute.String("method", r.Method),
-				attribute.String("route", getRoutePattern(r.URL.Path)),
+				attribute.String("method", methodLabel(r.Method)),
+				attribute.String("route", routeLabel(r)),
 				attribute.Int("status_code", wrapped.Status()),
 			}
 

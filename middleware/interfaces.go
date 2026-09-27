@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"tailscale.com/client/tailscale/apitype"
@@ -114,21 +113,4 @@ type TelemetryMetrics struct {
 	RequestCounter  interface{} // Will be metric.Int64Counter
 	RequestDuration interface{} // Will be metric.Float64Histogram
 	ErrorCounter    interface{} // Will be metric.Int64Counter
-}
-
-// DiscussService interface for the main service
-type DiscussService interface {
-	ListThreads(w http.ResponseWriter, r *http.Request)
-	ListThreadPosts(w http.ResponseWriter, r *http.Request)
-	ListMember(w http.ResponseWriter, r *http.Request)
-	NewThread(w http.ResponseWriter, r *http.Request)
-	CreateThread(w http.ResponseWriter, r *http.Request)
-	EditMemberProfile(w http.ResponseWriter, r *http.Request)
-	EditThread(w http.ResponseWriter, r *http.Request)
-	EditThreadPost(w http.ResponseWriter, r *http.Request)
-	CreateThreadPost(w http.ResponseWriter, r *http.Request)
-	Admin(w http.ResponseWriter, r *http.Request)
-	ServeStatic(w http.ResponseWriter, r *http.Request)
-	HealthCheck(w http.ResponseWriter, r *http.Request)
-	MetricsHandler(w http.ResponseWriter, r *http.Request)
 }

@@ -44,6 +44,7 @@ type MockQueries struct {
 	GetThreadSubjectByIdFunc  func(ctx context.Context, id int64) (string, error)
 	ListMemberThreadsFunc     func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
 	ListThreadPostsFunc       func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
+	ListThreadsFunc           func(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
 	UpdateBoardEditWindowFunc func(ctx context.Context, arg pgtype.Int4) error
 	UpdateBoardTitleFunc      func(ctx context.Context, arg string) error
 	UpdateThreadFunc          func(ctx context.Context, arg UpdateThreadParams) error
@@ -190,6 +191,10 @@ func (m *MockQueries) ListThreadPosts(ctx context.Context, arg ListThreadPostsPa
 }
 
 func (m *MockQueries) ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error) {
+	if m.ListThreadsFunc != nil {
+		return m.ListThreadsFunc(ctx, arg)
+	}
+
 	return []ListThreadsRow{
 		{
 			ThreadID:       1,

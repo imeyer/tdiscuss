@@ -204,12 +204,13 @@ const getThreadPostForEdit = `-- name: GetThreadPostForEdit :one
 SELECT tp.id, tp.body
 FROM thread_post tp LEFT JOIN member m
   ON tp.member_id=m.id
-WHERE tp.id=$1 AND m.id=$2
+WHERE tp.id=$1 AND m.id=$2 AND tp.thread_id=$3
 `
 
 type GetThreadPostForEditParams struct {
-	ID   int64
-	ID_2 int64
+	ID       int64
+	ID_2     int64
+	ThreadID int64
 }
 
 type GetThreadPostForEditRow struct {
@@ -218,7 +219,7 @@ type GetThreadPostForEditRow struct {
 }
 
 func (q *Queries) GetThreadPostForEdit(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
-	row := q.db.QueryRow(ctx, getThreadPostForEdit, arg.ID, arg.ID_2)
+	row := q.db.QueryRow(ctx, getThreadPostForEdit, arg.ID, arg.ID_2, arg.ThreadID)
 	var i GetThreadPostForEditRow
 	err := row.Scan(&i.ID, &i.Body)
 	return i, err

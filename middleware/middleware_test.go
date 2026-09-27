@@ -314,7 +314,7 @@ func TestRequestSizeLimitMiddleware_ReadPartially(t *testing.T) {
 // TestCSRFProtectionMiddleware tests the Go 1.25 built-in CSRF protection
 func TestCSRFProtectionMiddleware(t *testing.T) {
 	config := defaultSecurityConfig()
-	middleware := csrfProtectionMiddleware(config)
+	middleware := csrfProtectionMiddleware(config, plainTextErrors)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -356,7 +356,7 @@ func TestCSRFProtectionMiddleware(t *testing.T) {
 
 func TestCSRFMiddlewareIntegration(t *testing.T) {
 	config := defaultSecurityConfig()
-	csrfMiddleware := csrfProtectionMiddleware(config)
+	csrfMiddleware := csrfProtectionMiddleware(config, plainTextErrors)
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("success"))
@@ -381,7 +381,7 @@ func TestCSRFMiddlewareIntegration(t *testing.T) {
 		wrapped.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusForbidden, w.Code, "Cross-origin POST should be blocked by CSRF")
-		assert.Contains(t, w.Body.String(), "Cross-origin request rejected")
+		assert.Contains(t, w.Body.String(), "sent from a different site")
 	})
 }
 

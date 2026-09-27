@@ -21,7 +21,6 @@
 
 <h2 class="section-title">Configuration</h2>
 
-<!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
 <form action="/admin" method="POST">
     <input type="hidden" name="action" value="update_config">
     <div class="form-group">
@@ -79,7 +78,6 @@
             {{ if .IsSelf }}
                 <span class="member-action-disabled" title="You cannot change your own admin or blocked status">&mdash;</span>
             {{ else }}
-                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
                 <form action="/admin" method="POST" class="inline-form">
                     {{ if .IsAdmin }}
                     <input type="hidden" name="action" value="unset_admin">
@@ -92,7 +90,6 @@
                     {{ end }}
                 </form>
                 {{ if .IsBlocked }}
-                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
                 <form action="/admin" method="POST" class="inline-form">
                     <input type="hidden" name="action" value="unblock_member">
                     <input type="hidden" name="member_id" value="{{ .MemberID }}">
@@ -101,7 +98,6 @@
                 {{ else if .IsAdmin }}
                 <span class="member-action-disabled" title="Remove admin before blocking this member">cannot block an admin</span>
                 {{ else }}
-                <!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
                 <form action="/admin" method="POST" class="inline-form">
                     <input type="hidden" name="action" value="block_member">
                     <input type="hidden" name="member_id" value="{{ .MemberID }}">
