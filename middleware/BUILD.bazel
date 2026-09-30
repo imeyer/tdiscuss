@@ -36,8 +36,11 @@ go_test(
     size = "small",
     srcs = [
         "capabilities_test.go",
+        "error_renderer_test.go",
         "middleware_auth_test.go",
         "middleware_integration_test.go",
+        "middleware_observability_test.go",
+        "middleware_ratelimit_test.go",
         "middleware_test.go",
     ],
     embed = [":middleware"],

@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -41,12 +41,11 @@ type MemberAdminTemplateData struct {
 }
 
 type ThreadPostTemplateData struct {
-	ID       int64
-	Body     template.HTML
-	ThreadID pgtype.Int8
-	MemberID pgtype.Int8
-	Email    pgtype.Text
-	// nosemgrep
+	ID         int64
+	Body       template.HTML
+	ThreadID   pgtype.Int8
+	MemberID   pgtype.Int8
+	Email      pgtype.Text
 	DatePosted pgtype.Timestamptz
 	CanEdit    pgtype.Bool
 }
@@ -66,24 +65,82 @@ type ThreadTemplateData struct {
 }
 
 func (s *DiscussService) renderTemplate(w http.ResponseWriter, r *http.Request, tmpl string, data map[string]interface{}) {
-	if err := s.tmpls.ExecuteTemplate(w, tmpl, data); err != nil {
-		s.logger.ErrorContext(r.Context(), err.Error())
-		http.Error(w, "Failed to render template", http.StatusInternalServerError)
+	// Render into a buffer so a failure partway through can still send a 500;
+	// once anything reaches w, the 200 status has already gone out.
+	var buf bytes.Buffer
+	if err := s.tmpls.ExecuteTemplate(&buf, tmpl, data); err != nil {
+		s.logger.ErrorContext(r.Context(), "error rendering template",
+			slog.String("template", tmpl), slog.String("error", err.Error()))
+		s.renderError(w, r, http.StatusInternalServerError)
+		return
+	}
+	if _, err := buf.WriteTo(w); err != nil {
+		s.logger.DebugContext(r.Context(), "error writing response", slog.String("error", err.Error()))
 	}
 }
 
-func (s *DiscussService) renderError(w http.ResponseWriter, statusCode int) {
-	http.Error(w, http.StatusText(statusCode), statusCode)
+// renderError sends the error page with the standard message for statusCode.
+func (s *DiscussService) renderError(w http.ResponseWriter, r *http.Request, statusCode int) {
+	s.renderErrorMessage(w, r, statusCode, "")
 }
 
-func (s *DiscussService) Admin(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		s.AdminGET(w, r)
-	} else if r.Method == http.MethodPost {
-		s.AdminPOST(w, r)
-	} else {
-		s.renderError(w, http.StatusBadRequest)
+// renderErrorMessage sends the error page with message under the status, or
+// the standard message for statusCode when message is empty. It is also the
+// middleware.ErrorRenderer for the page chains, so a request the middleware
+// turns away gets the same page as a handler error. If error.html itself
+// fails to render, the same status and message go out as plain text, so every
+// error still gets a clean, readable response.
+func (s *DiscussService) renderErrorMessage(w http.ResponseWriter, r *http.Request, statusCode int, message string) {
+	if message == "" {
+		message = errorMessage(statusCode)
 	}
+
+	// A request that fails before authentication has no user. The zero User
+	// renders the page without the menu.
+	user, _ := GetUser(r)
+
+	var buf bytes.Buffer
+	err := s.tmpls.ExecuteTemplate(&buf, "error.html", map[string]interface{}{
+		// The board title when the request already has it, which handler
+		// errors do; the default otherwise. Middleware rejects some requests
+		// before the board data is loaded, and an error page should not add a
+		// database query of its own.
+		"Title":   GetBoardTitle(r),
+		"Heading": http.StatusText(statusCode),
+		"Error":   message,
+		"User":    user,
+		"Version": s.version,
+		"GitSha":  s.gitSha,
+	})
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "error rendering error page", slog.String("error", err.Error()))
+		http.Error(w, fmt.Sprintf("%d %s\n\n%s", statusCode, http.StatusText(statusCode), message), statusCode)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+	if _, err := buf.WriteTo(w); err != nil {
+		s.logger.DebugContext(r.Context(), "error writing response", slog.String("error", err.Error()))
+	}
+}
+
+// errorMessage explains statusCode in terms a board member can act on.
+func errorMessage(statusCode int) string {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return "That request wasn't valid. Check the link or form and try again."
+	case http.StatusForbidden:
+		return "You don't have permission to do that."
+	case http.StatusNotFound:
+		return "That page doesn't exist. It may have been removed, or the link may be wrong."
+	case http.StatusMethodNotAllowed:
+		return "That action isn't available here."
+	}
+	if statusCode < http.StatusInternalServerError {
+		return "That request couldn't be completed."
+	}
+	return "Something went wrong on our end. Try again in a moment."
 }
 
 func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
@@ -93,26 +150,26 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	if !user.IsAdmin {
-		s.renderError(w, http.StatusForbidden)
+		s.renderError(w, r, http.StatusForbidden)
 		return
 	}
 
 	boardData, err := s.queries.GetBoardData(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting board data", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	members, err := s.queries.ListMembers(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error listing members", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -158,17 +215,17 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	if !user.IsAdmin {
-		s.renderError(w, http.StatusForbidden)
+		s.renderError(w, r, http.StatusForbidden)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -181,7 +238,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 		memberID, err = strconv.ParseInt(memberIDStr, 10, 64)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "error parsing member ID", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 	}
@@ -191,7 +248,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 		threadID, err = strconv.ParseInt(threadIDStr, 10, 64)
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 	}
@@ -202,7 +259,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 	case "block_member", "unblock_member", "delete_member":
 		if memberID <= 0 {
 			s.logger.ErrorContext(r.Context(), "invalid member ID", slog.Int64("memberID", memberID))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 
@@ -213,7 +270,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			s.logger.WarnContext(r.Context(), "admin attempted to change their own blocked status",
 				slog.Int64("actor_id", user.ID),
 				slog.String("action", action))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 
@@ -238,13 +295,13 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 					s.logger.WarnContext(r.Context(), "attempt to block unknown member",
 						slog.Int64("actor_id", user.ID),
 						slog.Int64("member_id", memberID))
-					s.renderError(w, http.StatusBadRequest)
+					s.renderError(w, r, http.StatusBadRequest)
 					return
 				}
 				s.logger.ErrorContext(r.Context(), "failed to look up member admin status",
 					slog.Int64("memberID", memberID),
 					slog.String("error", err.Error()))
-				s.renderError(w, http.StatusInternalServerError)
+				s.renderError(w, r, http.StatusInternalServerError)
 				return
 			}
 
@@ -252,7 +309,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 				s.logger.WarnContext(r.Context(), "admin attempted to block another admin",
 					slog.Int64("actor_id", user.ID),
 					slog.Int64("member_id", memberID))
-				s.renderError(w, http.StatusForbidden)
+				s.renderError(w, r, http.StatusForbidden)
 				return
 			}
 		}
@@ -265,7 +322,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 				slog.Int64("memberID", memberID),
 				slog.Bool("is_blocked", blocked),
 				slog.String("error", err.Error()))
-			s.renderError(w, http.StatusInternalServerError)
+			s.renderError(w, r, http.StatusInternalServerError)
 			return
 		}
 
@@ -279,7 +336,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 	case "set_admin", "unset_admin":
 		if memberID <= 0 {
 			s.logger.ErrorContext(r.Context(), "invalid member ID", slog.Int64("memberID", memberID))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 
@@ -291,7 +348,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			s.logger.WarnContext(r.Context(), "admin attempted to change their own admin status",
 				slog.Int64("actor_id", user.ID),
 				slog.String("action", action))
-			s.renderError(w, http.StatusBadRequest)
+			s.renderError(w, r, http.StatusBadRequest)
 			return
 		}
 
@@ -304,7 +361,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 				slog.Int64("memberID", memberID),
 				slog.Bool("is_admin", grant),
 				slog.String("error", err.Error()))
-			s.renderError(w, http.StatusInternalServerError)
+			s.renderError(w, r, http.StatusInternalServerError)
 			return
 		}
 
@@ -328,7 +385,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			if err := s.queries.UpdateBoardTitle(r.Context(), boardTitle); err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to update board title",
 					slog.String("error", err.Error()))
-				s.renderError(w, http.StatusInternalServerError)
+				s.renderError(w, r, http.StatusInternalServerError)
 				return
 			}
 		}
@@ -338,14 +395,14 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				s.logger.ErrorContext(r.Context(), "invalid edit window value",
 					slog.String("error", err.Error()))
-				s.renderError(w, http.StatusBadRequest)
+				s.renderError(w, r, http.StatusBadRequest)
 				return
 			}
 
 			if err := s.queries.UpdateBoardEditWindow(r.Context(), pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil {
 				s.logger.ErrorContext(r.Context(), "failed to update edit window",
 					slog.String("error", err.Error()))
-				s.renderError(w, http.StatusInternalServerError)
+				s.renderError(w, r, http.StatusInternalServerError)
 				return
 			}
 		}
@@ -355,7 +412,7 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 			slog.String("edit_window", editWindowStr))
 	default:
 		s.logger.ErrorContext(r.Context(), "unknown action", slog.String("action", action))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -372,28 +429,18 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	// CSRF validation is handled by middleware
 
-	if r.URL.Path != "/thread/new" {
-		s.renderError(w, http.StatusNotFound)
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	span.AddEvent("GetUser(r)")
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "CreateThread: failed to get user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	span.AddEvent("r.ParseForm")
 	if err := r.ParseForm(); err != nil {
 		s.logger.DebugContext(r.Context(), "error parsing form", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -402,7 +449,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 
 	if errors := ValidateThreadForm(subjectInput, bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
-		http.Error(w, errors.Error(), http.StatusBadRequest)
+		s.renderErrorMessage(w, r, http.StatusBadRequest, errors.Error())
 		return
 	}
 
@@ -417,7 +464,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	tx, err := s.dbconn.Begin(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error starting transaction", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback(r.Context())
@@ -431,7 +478,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		LastMemberID: user.ID,
 	}); err != nil {
 		s.logger.ErrorContext(r.Context(), "error creating thread", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -439,7 +486,7 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	threadID, err := qtx.GetThreadSequenceId(r.Context())
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting thread sequence ID", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -450,18 +497,17 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 		MemberID: user.ID,
 	}); err != nil {
 		s.logger.ErrorContext(r.Context(), "error creating thread post", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	span.AddEvent("tx.Commit")
 	if err := tx.Commit(r.Context()); err != nil {
 		s.logger.ErrorContext(r.Context(), "error committing transaction", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
-	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
@@ -477,28 +523,23 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "CreateThreadPost: failed to get user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	receivedToken := r.FormValue("csrf_token")
 	s.logger.DebugContext(r.Context(), "received csrf token", slog.String("token", receivedToken))
 
-	if r.Method != http.MethodPost {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -506,7 +547,7 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 
 	if errors := ValidateThreadPostForm(bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
-		http.Error(w, errors.Error(), http.StatusBadRequest)
+		s.renderErrorMessage(w, r, http.StatusBadRequest, errors.Error())
 		return
 	}
 
@@ -521,56 +562,67 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		MemberID: user.ID,
 	}); err != nil {
 		s.logger.ErrorContext(r.Context(), "error creating thread post", slog.String("SQLError", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
-	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
-func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Request) {
-	s.logger.DebugContext(r.Context(), "entering EditMemberProfile")
-	defer s.logger.DebugContext(r.Context(), "exiting EditMemberProfile")
-
-	if r.Method != http.MethodPost && r.Method != http.MethodGet {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
+// ownProfile returns the signed-in member and their profile. When ok is false
+// it has already sent the error page.
+func (s *DiscussService) ownProfile(w http.ResponseWriter, r *http.Request) (user User, member GetMemberRow, ok bool) {
 	user, err := GetUser(r)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "EditMemberProfile", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
-		return
+		s.logger.ErrorContext(r.Context(), "GetUser", slog.String("error", err.Error()))
+		s.renderError(w, r, http.StatusInternalServerError)
+		return user, member, false
 	}
 
-	member, err := s.queries.GetMember(r.Context(), user.ID)
+	member, err = s.queries.GetMember(r.Context(), user.ID)
 	if err != nil {
-		s.renderError(w, http.StatusInternalServerError)
-		return
+		s.renderError(w, r, http.StatusInternalServerError)
+		return user, member, false
 	}
 
 	if member.Email != user.Email {
-		s.renderError(w, http.StatusForbidden)
+		s.renderError(w, r, http.StatusForbidden)
+		return user, member, false
+	}
+
+	return user, member, true
+}
+
+func (s *DiscussService) EditMemberProfileGET(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering EditMemberProfileGET")
+	defer s.logger.DebugContext(r.Context(), "exiting EditMemberProfileGET")
+
+	user, member, ok := s.ownProfile(w, r)
+	if !ok {
 		return
 	}
 
+	s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
+		"Title":            GetBoardTitle(r),
+		"Member":           member,
+		"CurrentUserEmail": user.Email,
+		"Version":          s.version,
+		"GitSha":           s.gitSha,
+		"User":             user,
+	})
+}
 
-	if r.Method == http.MethodGet {
-		s.renderTemplate(w, r, "edit-profile.html", map[string]interface{}{
-			"Title":            GetBoardTitle(r),
-			"Member":           member,
-			"CurrentUserEmail": user.Email,
-			"Version":          s.version,
-			"GitSha":           s.gitSha,
-						"User":             user,
-		})
+func (s *DiscussService) EditMemberProfilePOST(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "entering EditMemberProfilePOST")
+	defer s.logger.DebugContext(r.Context(), "exiting EditMemberProfilePOST")
+
+	user, _, ok := s.ownProfile(w, r)
+	if !ok {
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -582,11 +634,11 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 
 	if errors := ValidateProfileForm(newPhotoURL, newLocation, newPreferredName, newBio, newPronouns); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
-		http.Error(w, errors.Error(), http.StatusBadRequest)
+		s.renderErrorMessage(w, r, http.StatusBadRequest, errors.Error())
 		return
 	}
 
-	err = s.queries.UpdateMemberProfileByID(r.Context(), UpdateMemberProfileByIDParams{
+	err := s.queries.UpdateMemberProfileByID(r.Context(), UpdateMemberProfileByIDParams{
 		MemberID: user.ID,
 		PhotoUrl: pgtype.Text{
 			String: parseHTMLStrict(newPhotoURL),
@@ -611,47 +663,24 @@ func (s *DiscussService) EditMemberProfile(w http.ResponseWriter, r *http.Reques
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "UpdateMemberProfileByID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
-	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/member/%d", user.ID), http.StatusSeeOther)
 }
 
-func (s *DiscussService) EditThread(w http.ResponseWriter, r *http.Request) {
-	s.logger.DebugContext(r.Context(), "EditThreadPost", slog.String("tid", r.PathValue("tid")))
-
-	switch r.Method {
-	case http.MethodGet:
-		s.editThreadGET(w, r)
-	case http.MethodPost:
-		s.editThreadPOST(w, r)
-	default:
-		s.renderError(w, http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) {
+func (s *DiscussService) EditThreadPOST(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
-		return
-	}
-
-	re := regexp.MustCompile(`^/thread/\d+/edit$`)
-	matches := re.FindStringSubmatch(r.URL.Path)
-	s.logger.DebugContext(r.Context(), "editThreadPOST", slog.String("path", r.URL.Path), slog.Any("matches", matches))
-	if len(matches) < 1 {
-		s.logger.ErrorContext(r.Context(), "Invalid path")
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "GetUser", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -660,7 +689,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 
 	if errors := ValidateThreadForm(subjectInput, bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
-		http.Error(w, errors.Error(), http.StatusBadRequest)
+		s.renderErrorMessage(w, r, http.StatusBadRequest, errors.Error())
 		return
 	}
 
@@ -673,7 +702,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -685,18 +714,18 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			s.logger.ErrorContext(r.Context(), "GetThreadForEdit: no such thread or thread does not belong to user", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.logger.ErrorContext(r.Context(), "GetThreadForEdit", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	threadID = t.ThreadID
 	threadPostID := t.ThreadPostID.Int64
 
-	s.logger.DebugContext(r.Context(), "editThreadPOST", slog.Int64("threadID", threadID), slog.Int64("threadPostID", threadPostID))
+	s.logger.DebugContext(r.Context(), "EditThreadPOST", slog.Int64("threadID", threadID), slog.Int64("threadPostID", threadPostID))
 
 	subjectChanged := t.Subject != subject
 	bodyChanged := t.Body.String != body
@@ -709,7 +738,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 		})
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "UpdateThread", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusInternalServerError)
+			s.renderError(w, r, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -725,7 +754,7 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 		})
 		if err != nil {
 			s.logger.ErrorContext(r.Context(), "UpdateThreadPost", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusInternalServerError)
+			s.renderError(w, r, http.StatusInternalServerError)
 			return
 		}
 	}
@@ -739,15 +768,14 @@ func (s *DiscussService) editThreadPOST(w http.ResponseWriter, r *http.Request) 
 		)
 	}
 
-	// nosemgrep
 	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
-func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
+func (s *DiscussService) EditThreadGET(w http.ResponseWriter, r *http.Request) {
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "GetUser", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -756,7 +784,7 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -768,11 +796,11 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			s.logger.ErrorContext(r.Context(), "GetThreadForEdit: no such thread", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.logger.ErrorContext(r.Context(), "GetThreadForEdit", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -786,32 +814,26 @@ func (s *DiscussService) editThreadGET(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *DiscussService) EditThreadPost(w http.ResponseWriter, r *http.Request) {
-	s.logger.DebugContext(r.Context(), "EditThreadPost", slog.String("tid", r.PathValue("tid")), slog.String("pid", r.PathValue("pid")))
-
-	switch r.Method {
-	case http.MethodGet:
-		s.editThreadPostGET(w, r)
-	case http.MethodPost:
-		s.editThreadPostPOST(w, r)
-	default:
-		s.renderError(w, http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Request) {
-	s.logger.DebugContext(r.Context(), "editThreadPostPOST", slog.String("path", r.URL.Path))
+func (s *DiscussService) EditThreadPostPOST(w http.ResponseWriter, r *http.Request) {
+	s.logger.DebugContext(r.Context(), "EditThreadPostPOST", slog.String("path", r.URL.Path))
 
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "GetUser", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
+		return
+	}
+
+	threadID, err := strconv.ParseInt(r.PathValue("tid"), 10, 64)
+	if err != nil {
+		s.logger.DebugContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
 		s.logger.ErrorContext(r.Context(), "ParseForm", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -819,7 +841,7 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 
 	if errors := ValidateThreadPostForm(bodyInput); len(errors) > 0 {
 		s.logger.DebugContext(r.Context(), "validation failed", slog.String("errors", errors.Error()))
-		http.Error(w, errors.Error(), http.StatusBadRequest)
+		s.renderErrorMessage(w, r, http.StatusBadRequest, errors.Error())
 		return
 	}
 
@@ -829,29 +851,31 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error parsing post ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
+	// The thread ID must match too, so a post can only be edited under its
+	// own thread's URL.
 	tp, err := s.queries.GetThreadPostForEdit(r.Context(), GetThreadPostForEditParams{
-		ID:   postID,
-		ID_2: user.ID,
+		ID:       postID,
+		ID_2:     user.ID,
+		ThreadID: threadID,
 	})
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			s.logger.ErrorContext(r.Context(), "GetThreadPostForEdit: no such thread post", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.logger.ErrorContext(r.Context(), "GetThreadPostForEdit", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	if tp.Body.String == body {
-		threadIDStr := r.PathValue("tid")
-		http.Redirect(w, r, fmt.Sprintf("/thread/%s", threadIDStr), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 		return
 	}
 
@@ -865,12 +889,9 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "UpdateThreadPost", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-
-	threadIDStr := r.PathValue("tid")
-	threadID, _ := strconv.ParseInt(threadIDStr, 10, 64)
 
 	s.logger.InfoContext(r.Context(), "post edited",
 		slog.Int64("thread_id", threadID),
@@ -878,15 +899,14 @@ func (s *DiscussService) editThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		slog.Int64("user_id", user.ID),
 	)
 
-	// nosemgrep
-	http.Redirect(w, r, fmt.Sprintf("/thread/%s", threadIDStr), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
 }
 
-func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Request) {
+func (s *DiscussService) EditThreadPostGET(w http.ResponseWriter, r *http.Request) {
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "GetUser", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -894,7 +914,7 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -902,23 +922,24 @@ func (s *DiscussService) editThreadPostGET(w http.ResponseWriter, r *http.Reques
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error parsing post ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
 	t, err := s.queries.GetThreadPostForEdit(r.Context(), GetThreadPostForEditParams{
-		ID:   postID,
-		ID_2: user.ID,
+		ID:       postID,
+		ID_2:     user.ID,
+		ThreadID: threadID,
 	})
 
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			s.logger.ErrorContext(r.Context(), "GetThreadPostForEdit: no such thread", slog.String("error", err.Error()))
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.logger.ErrorContext(r.Context(), "GetThreadPostForEdit", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -940,20 +961,11 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	r = r.WithContext(ctx)
 
-	if r.URL.Path != "/" {
-		s.renderError(w, http.StatusNotFound)
-		return
-	}
-
-	if r.Method != http.MethodGet {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
 
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error getting user", "error", err)
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -965,7 +977,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error listing threads", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -1006,17 +1018,13 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 
 	r = r.WithContext(ctx)
 
-	if r.Method != http.MethodGet {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
 
 	span.AddEvent("parseID")
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error parsing thread ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
@@ -1024,7 +1032,7 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error getting user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -1034,10 +1042,10 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error getting thread subject", slog.String("error", err.Error()))
 		if err == pgx.ErrNoRows {
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -1047,22 +1055,20 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	})
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "error listing thread posts", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	var threadPosts []ThreadPostTemplateData
 	for _, post := range posts {
 		threadPosts = append(threadPosts, ThreadPostTemplateData{
-			ID:       post.ID,
+			ID: post.ID,
 			// Body is sanitized with bluemonday (bodyPolicy) on write, so the
 			// stored value is safe to render as HTML here.
-			// nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
-			Body: template.HTML(post.Body.String),
-			ThreadID: post.ThreadID,
-			MemberID: post.MemberID,
-			Email:    post.Email,
-			// nosemgrep
+			Body:       template.HTML(post.Body.String), //nolint:gosec // G203: see above
+			ThreadID:   post.ThreadID,
+			MemberID:   post.MemberID,
+			Email:      post.Email,
 			DatePosted: post.DatePosted,
 			CanEdit:    pgtype.Bool{Bool: post.CanEdit, Valid: true},
 		})
@@ -1082,34 +1088,29 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 
 // ListMember displays a member's profile.
 func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.renderError(w, http.StatusMethodNotAllowed)
-		return
-	}
-
 	memberIDStr := r.PathValue("mid")
 	memberID, err := strconv.ParseInt(memberIDStr, 10, 64)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error parsing member ID", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusBadRequest)
+		s.renderError(w, r, http.StatusBadRequest)
 		return
 	}
 
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error getting user", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	member, err := s.queries.GetMember(r.Context(), memberID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			s.renderError(w, http.StatusNotFound)
+			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.logger.ErrorContext(r.Context(), "error getting member", slog.String("error", err.Error()))
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -1138,15 +1139,10 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 
 // NewThread displays the page for creating a new thread.
 func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/thread/new" || r.Method != http.MethodGet {
-		http.NotFound(w, r)
-		return
-	}
-
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
@@ -1165,15 +1161,11 @@ func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request)
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), err.Error())
-		s.renderError(w, http.StatusInternalServerError)
+		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
 
 	subjectExample := parseHTMLStrict("Check out this **cool** <script>alert('xss')</script> thing!")
-
-	heartEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":heart:"))
-	thumbsUpEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":+1:"))
-	smileEmoji := parseHTMLLessStrict(parseMarkdownToHTML(":smile:"))
 
 	s.renderTemplate(w, r, "formatting.html", map[string]interface{}{
 		"Title":          "Formatting Guide",
@@ -1181,12 +1173,17 @@ func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request)
 		"GitSha":         s.gitSha,
 		"User":           user,
 		"SubjectExample": subjectExample,
-		// Emoji values come from bluemonday-sanitized markdown of hardcoded
-		// literals, so they are safe to render as HTML.
-		"HeartEmoji":    template.HTML(heartEmoji),    // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
-		"ThumbsUpEmoji": template.HTML(thumbsUpEmoji), // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
-		"SmileEmoji":    template.HTML(smileEmoji),    // nosemgrep: go.lang.security.audit.xss.template-html-does-not-escape.unsafe-template-type
+		"HeartEmoji":     literalMarkdown(":heart:"),
+		"ThumbsUpEmoji":  literalMarkdown(":+1:"),
+		"SmileEmoji":     literalMarkdown(":smile:"),
 	})
+}
+
+// literalMarkdown renders markdown written in this file as HTML, the way a
+// post body is rendered. The input is ours and the output is sanitized with
+// bluemonday, so it is safe to render unescaped.
+func literalMarkdown(md string) template.HTML {
+	return template.HTML(parseHTMLLessStrict(parseMarkdownToHTML(md))) //nolint:gosec // G203: see above
 }
 
 // OTELMiddleware provides OpenTelemetry instrumentation for HTTP handlers

@@ -198,8 +198,8 @@ func TestAdminChain_GrantedByPolicy(t *testing.T) {
 			})
 			chain := newChain(
 				requestContextMiddleware(),
-				authMiddleware(provider, nil),
-				requireAdminMiddleware(),
+				authMiddleware(provider, nil, plainTextErrors),
+				requireAdminMiddleware(plainTextErrors),
 			)
 
 			req := httptest.NewRequest(http.MethodGet, "/admin", nil)

@@ -1,8 +1,8 @@
 package middleware
 
 import (
-	"context"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 
@@ -10,180 +10,171 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// MiddlewareSetup configures all middleware for the application
+// MiddlewareSetup builds the application's middleware chains. Its settings
+// are fixed when NewMiddlewareSetup returns, so every chain built from one
+// setup, and the rate limiter those chains share, see the same configuration.
 type MiddlewareSetup struct {
-	Logger    *slog.Logger
-	Tracer    trace.Tracer
-	Meter     metric.Meter
-	Telemetry *TelemetryConfig
+	logger    *slog.Logger
+	tracer    trace.Tracer
+	meter     metric.Meter
+	telemetry *TelemetryConfig
 
-	AuthProvider AuthProvider
+	authProvider AuthProvider
+	renderError  ErrorRenderer
 
-	SecurityConfig      *SecurityConfig
-	RateLimitConfig     *RateLimitConfig
-	ObservabilityConfig *ObservabilityConfig
+	securityConfig  *SecurityConfig
+	rateLimitConfig *RateLimitConfig
 
-	EnableAuth      bool
-	EnableRateLimit bool
-	EnableMetrics   bool
-	EnableTracing   bool
-	EnableCSRF      bool
+	// rateLimiter is shared by the public, authenticated and admin chains, so
+	// a device or member has one set of buckets whichever chain a route is on.
+	rateLimiter *RateLimiter
 }
 
-// NewMiddlewareSetup creates a new middleware setup with defaults
-func NewMiddlewareSetup(logger *slog.Logger, telemetry *TelemetryConfig, authProvider AuthProvider) *MiddlewareSetup {
-	tracer, _ := telemetry.Tracer.(trace.Tracer)
-	meter, _ := telemetry.Meter.(metric.Meter)
+// SetupOptions configures NewMiddlewareSetup.
+type SetupOptions struct {
+	Logger *slog.Logger
+	// Telemetry must carry a trace.Tracer: the observability middleware
+	// starts a span for every request.
+	Telemetry    *TelemetryConfig
+	AuthProvider AuthProvider
+
+	// ErrorRenderer writes the responses the chains send when they reject a
+	// request. Nil means plain text.
+	ErrorRenderer ErrorRenderer
+
+	// RateLimit replaces the default rate limits. It is copied, so changing
+	// it after NewMiddlewareSetup returns has no effect. A zero rate, burst
+	// or cleanup interval takes the default, and a nil Meter means the
+	// telemetry meter.
+	RateLimit *RateLimitConfig
+}
+
+// NewMiddlewareSetup creates a middleware setup from opts.
+func NewMiddlewareSetup(opts SetupOptions) *MiddlewareSetup {
+	tracer, _ := opts.Telemetry.Tracer.(trace.Tracer)
+	meter, _ := opts.Telemetry.Meter.(metric.Meter)
+
+	renderError := opts.ErrorRenderer
+	if renderError == nil {
+		renderError = plainTextErrors
+	}
+
+	rateLimit := defaultRateLimitConfig()
+	if opts.RateLimit != nil {
+		c := *opts.RateLimit
+		c.EndpointLimits = maps.Clone(opts.RateLimit.EndpointLimits)
+		// A zero rate or burst would reject every request, so a config that
+		// sets only EndpointLimits still gets the default per-device limit.
+		if c.RequestsPerSecond <= 0 {
+			c.RequestsPerSecond = rateLimit.RequestsPerSecond
+		}
+		if c.Burst <= 0 {
+			c.Burst = rateLimit.Burst
+		}
+		if c.CleanupInterval <= 0 {
+			c.CleanupInterval = rateLimit.CleanupInterval
+		}
+		rateLimit = &c
+	}
+	if rateLimit.Meter == nil {
+		rateLimit.Meter = meter
+	}
 
 	return &MiddlewareSetup{
-		Logger:       logger,
-		Tracer:       tracer,
-		Meter:        meter,
-		Telemetry:    telemetry,
-		AuthProvider: authProvider,
+		logger:       opts.Logger,
+		tracer:       tracer,
+		meter:        meter,
+		telemetry:    opts.Telemetry,
+		authProvider: opts.AuthProvider,
+		renderError:  renderError,
 
-		SecurityConfig:  defaultSecurityConfig(),
-		RateLimitConfig: defaultRateLimitConfig(),
-
-		EnableAuth:      true,
-		EnableRateLimit: true,
-		EnableMetrics:   true,
-		EnableTracing:   true,
-		EnableCSRF:      true,
+		securityConfig:  defaultSecurityConfig(),
+		rateLimitConfig: rateLimit,
+		rateLimiter:     newRateLimiter(rateLimit, opts.Logger, renderError),
 	}
 }
 
 // CreatePublicChain creates middleware chain for public endpoints
 func (ms *MiddlewareSetup) CreatePublicChain() *Chain {
-	middlewares := []Middleware{
+	return newChain(
 		requestContextMiddleware(),
-	}
-
-	if ms.EnableMetrics || ms.EnableTracing {
-		middlewares = append(middlewares, ms.createObservabilityMiddleware())
-	}
-
-	middlewares = append(middlewares, loggingMiddleware(ms.Logger))
-
-	middlewares = append(middlewares, securityHeadersMiddleware(ms.SecurityConfig))
-
-	middlewares = append(middlewares, requestSizeLimitMiddleware(1024*1024)) // 1MB
-
-	if ms.EnableRateLimit {
-		rl := newRateLimiter(ms.RateLimitConfig, ms.Logger)
-		middlewares = append(middlewares, rl.Middleware())
-	}
-
-	// CSRF protection is now handled by CrossOriginProtection middleware in authenticated chains
-
-	return newChain(middlewares...)
+		ms.createObservabilityMiddleware(),
+		loggingMiddleware(ms.logger),
+		securityHeadersMiddleware(ms.securityConfig),
+		requestSizeLimitMiddleware(1024*1024, ms.renderError), // 1MB
+		ms.rateLimiter.Middleware(),
+		// CSRF protection is handled by CrossOriginProtection middleware in authenticated chains
+	)
 }
 
 // CreateAuthenticatedChain creates middleware chain for authenticated endpoints
 func (ms *MiddlewareSetup) CreateAuthenticatedChain() *Chain {
-	chain := ms.CreatePublicChain()
-
-	if ms.EnableAuth {
-		chain = chain.Append(
-			authMiddleware(ms.AuthProvider, ms.Tracer),
-			userEnrichmentMiddleware(),
-		)
-	}
-
-	if ms.EnableCSRF {
-		chain = chain.Append(
-			when(hasMethod("POST", "PUT", "PATCH", "DELETE"),
-				csrfProtectionMiddleware(ms.SecurityConfig)),
-		)
-	}
-
-	return chain
+	return ms.withWriteLimits(ms.signedInChain())
 }
 
 // CreateAdminChain creates middleware chain for admin endpoints
 func (ms *MiddlewareSetup) CreateAdminChain() *Chain {
-	chain := ms.CreateAuthenticatedChain()
+	chain := ms.signedInChain()
 
-	chain = chain.Append(requireAdminMiddleware())
+	chain = chain.Append(requireAdminMiddleware(ms.renderError))
 
-	chain = chain.Append(adminAuditMiddleware(ms.Logger))
+	// After the admin check, so a non-admin is told they are not an admin
+	// rather than that they are sending too many requests.
+	chain = ms.withWriteLimits(chain)
+
+	chain = chain.Append(adminAuditMiddleware(ms.logger))
 
 	return chain
 }
 
-// CreateAPIChain creates middleware chain for API endpoints
-func (ms *MiddlewareSetup) CreateAPIChain() *Chain {
-	middlewares := []Middleware{
-		requestContextMiddleware(),
-	}
+// signedInChain is the public chain plus authentication and the CSRF check.
+func (ms *MiddlewareSetup) signedInChain() *Chain {
+	return ms.CreatePublicChain().Append(
+		authMiddleware(ms.authProvider, ms.tracer, ms.renderError),
+		userEnrichmentMiddleware(),
+		when(hasMethod("POST", "PUT", "PATCH", "DELETE"),
+			csrfProtectionMiddleware(ms.securityConfig, ms.renderError)),
+	)
+}
 
-	if ms.EnableMetrics || ms.EnableTracing {
-		middlewares = append(middlewares, ms.createObservabilityMiddleware())
-	}
-
-	middlewares = append(middlewares, apiLoggingMiddleware(ms.Logger))
-
-	apiSecurityConfig := *ms.SecurityConfig
-	apiSecurityConfig.CSPDirectives = map[string]string{
-		"default-src":     "'none'",
-		"frame-ancestors": "'none'",
-	}
-	middlewares = append(middlewares, securityHeadersMiddleware(&apiSecurityConfig))
-
-	middlewares = append(middlewares, requestSizeLimitMiddleware(10*1024*1024)) // 10MB
-
-	if ms.EnableRateLimit {
-		apiRateLimitConfig := *ms.RateLimitConfig
-		apiRateLimitConfig.RequestsPerSecond = 100
-		apiRateLimitConfig.Burst = 200
-
-		rl := newRateLimiter(&apiRateLimitConfig, ms.Logger)
-		middlewares = append(middlewares, rl.Middleware())
-	}
-
-	if ms.EnableAuth {
-		middlewares = append(middlewares,
-			authMiddleware(ms.AuthProvider, ms.Tracer),
-			userEnrichmentMiddleware(),
-		)
-	}
-
-	middlewares = append(middlewares, jsonErrorMiddleware())
-
-	return newChain(middlewares...)
+// withWriteLimits appends the per-member write limits. They run after
+// authentication, so the limits are per member, and after the CSRF check, so
+// a forged cross-site post cannot spend a member's allowance.
+func (ms *MiddlewareSetup) withWriteLimits(chain *Chain) *Chain {
+	return chain.Append(ms.rateLimiter.EndpointMiddleware())
 }
 
 // createObservabilityMiddleware creates the observability middleware
 func (ms *MiddlewareSetup) createObservabilityMiddleware() Middleware {
-	requestCounter, _ := ms.Telemetry.Metrics.RequestCounter.(metric.Int64Counter)
-	requestDuration, _ := ms.Telemetry.Metrics.RequestDuration.(metric.Float64Histogram)
-	errorCounter, _ := ms.Telemetry.Metrics.ErrorCounter.(metric.Int64Counter)
+	requestCounter, _ := ms.telemetry.Metrics.RequestCounter.(metric.Int64Counter)
+	requestDuration, _ := ms.telemetry.Metrics.RequestDuration.(metric.Float64Histogram)
+	errorCounter, _ := ms.telemetry.Metrics.ErrorCounter.(metric.Int64Counter)
 
 	config := &ObservabilityConfig{
 		ServiceName:     "tdiscuss",
-		Logger:          ms.Logger,
-		Tracer:          ms.Tracer,
-		Meter:           ms.Meter,
+		Logger:          ms.logger,
+		Tracer:          ms.tracer,
+		Meter:           ms.meter,
 		RequestCounter:  requestCounter,
 		RequestDuration: requestDuration,
 		ErrorCounter:    errorCounter,
 		SampleRate:      1.0, // TODO: Get from config
 	}
 
-	if ms.Meter != nil {
-		config.RequestSize, _ = ms.Meter.Int64Histogram(
+	if ms.meter != nil {
+		config.RequestSize, _ = ms.meter.Int64Histogram(
 			"http.server.request.size",
 			metric.WithDescription("Size of HTTP request bodies"),
 			metric.WithUnit("By"),
 		)
 
-		config.ResponseSize, _ = ms.Meter.Int64Histogram(
+		config.ResponseSize, _ = ms.meter.Int64Histogram(
 			"http.server.response.size",
 			metric.WithDescription("Size of HTTP response bodies"),
 			metric.WithUnit("By"),
 		)
 
-		config.ActiveRequests, _ = ms.Meter.Int64UpDownCounter(
+		config.ActiveRequests, _ = ms.meter.Int64UpDownCounter(
 			"http.server.active_requests",
 			metric.WithDescription("Number of active HTTP requests"),
 			metric.WithUnit("{request}"),
@@ -191,44 +182,6 @@ func (ms *MiddlewareSetup) createObservabilityMiddleware() Middleware {
 	}
 
 	return newObservabilityMiddleware(config)
-}
-
-// SetupRoutes configures routes with appropriate middleware chains
-func (ms *MiddlewareSetup) SetupRoutes(svc DiscussService) http.Handler {
-	mux := http.NewServeMux()
-
-	publicChain := ms.CreatePublicChain()
-	authChain := ms.CreateAuthenticatedChain()
-	adminChain := ms.CreateAdminChain()
-
-	mux.Handle("/", publicChain.ThenFunc(svc.ListThreads))
-	mux.Handle("/thread/", publicChain.ThenFunc(svc.ListThreadPosts))
-	mux.Handle("/member/", publicChain.ThenFunc(svc.ListMember))
-
-	mux.Handle("/thread/new", authChain.ThenFunc(svc.NewThread))
-	mux.Handle("/thread/create", authChain.ThenFunc(svc.CreateThread))
-	mux.Handle("/member/edit", authChain.ThenFunc(svc.EditMemberProfile))
-
-	mux.Handle("/thread/edit", authChain.ThenFunc(svc.EditThread))
-	mux.Handle("/thread/post/edit", authChain.ThenFunc(svc.EditThreadPost))
-	mux.Handle("/thread/reply", authChain.ThenFunc(svc.CreateThreadPost))
-
-	mux.Handle("/admin", adminChain.ThenFunc(svc.Admin))
-
-	staticChain := publicChain.Append(staticFileMiddleware())
-	mux.Handle("/static/", staticChain.ThenFunc(svc.ServeStatic))
-
-	healthChain := newChain(
-		requestContextMiddleware(),
-		loggingMiddleware(ms.Logger),
-	)
-	mux.Handle("/health", healthChain.ThenFunc(svc.HealthCheck))
-
-	if ms.EnableMetrics {
-		mux.Handle("/metrics", http.HandlerFunc(svc.MetricsHandler))
-	}
-
-	return mux
 }
 
 // adminAuditMiddleware logs all admin actions
@@ -256,41 +209,6 @@ func adminAuditMiddleware(logger *slog.Logger) Middleware {
 	}
 }
 
-// apiLoggingMiddleware provides structured logging for API requests
-func apiLoggingMiddleware(logger *slog.Logger) Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rc := getOrCreateRequestContext(r.Context())
-			wrapped := newResponseWriter(w)
-
-			apiLogger := logger.With(
-				slog.String("api_version", getAPIVersion(r.URL.Path)),
-				slog.String("request_id", rc.RequestID),
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-			)
-
-			ctx := context.WithValue(r.Context(), contextKey("logger"), apiLogger)
-
-			next.ServeHTTP(wrapped, r.WithContext(ctx))
-		})
-	}
-}
-
-// jsonErrorMiddleware handles errors in JSON format for API endpoints
-func jsonErrorMiddleware() Middleware {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			wrapped := &jsonErrorResponseWriter{
-				ResponseWriter: w,
-				request:        r,
-			}
-
-			next.ServeHTTP(wrapped, r)
-		})
-	}
-}
-
 // staticFileMiddleware adds caching headers for static files
 func staticFileMiddleware() Middleware {
 	return func(next http.Handler) http.Handler {
@@ -306,35 +224,4 @@ func staticFileMiddleware() Middleware {
 			next.ServeHTTP(w, r)
 		})
 	}
-}
-
-func getAPIVersion(path string) string {
-	if strings.HasPrefix(path, "/api/v1/") {
-		return "v1"
-	} else if strings.HasPrefix(path, "/api/v2/") {
-		return "v2"
-	}
-	return "unknown"
-}
-
-// jsonErrorResponseWriter wraps ResponseWriter to handle JSON errors
-type jsonErrorResponseWriter struct {
-	http.ResponseWriter
-	request *http.Request
-	wrote   bool
-}
-
-func (w *jsonErrorResponseWriter) WriteHeader(status int) {
-	if !w.wrote && status >= 400 {
-		w.Header().Set("Content-Type", "application/json")
-	}
-	w.wrote = true
-	w.ResponseWriter.WriteHeader(status)
-}
-
-func (w *jsonErrorResponseWriter) Write(b []byte) (int, error) {
-	if !w.wrote {
-		w.WriteHeader(http.StatusOK)
-	}
-	return w.ResponseWriter.Write(b)
 }

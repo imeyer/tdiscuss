@@ -1,6 +1,5 @@
 {{ template "header" . }}
 
-{{ if .Member }}
 <div class="member-profile-card">
     <div class="member-profile-header">
         <div class="profile-photo">
@@ -15,7 +14,7 @@
                 {{ if ne .Member.PreferredName.String "" }}
                     {{ .Member.PreferredName.String }}
                 {{ else }}
-                    {{ .User.Email }}
+                    {{ .Member.Email }}
                 {{ end }}
             </div>
             <div class="profile-fields">
@@ -51,11 +50,5 @@
         {{ template "member-threads-partial" . }}
     </div>
 </div>
-{{ else }}
-<div class="member-profile-card">
-    <h1 class="page-title">Member not found</h1>
-    <p class="text-muted">The member you're looking for doesn't exist.</p>
-</div>
-{{ end }}
 
 {{ template "footer" . }}

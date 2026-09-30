@@ -132,8 +132,12 @@ func (p *TailscaleAuthProvider) CreateOrGetUser(ctx context.Context, peer *Peer)
 	}, nil
 }
 
+// notIdentifiedMessage explains a 401: the request did not come from a tailnet
+// member the board can identify.
+const notIdentifiedMessage = "The board couldn't identify you on the tailnet. Only tailnet members can use it."
+
 // authMiddleware provides authentication using the given provider
-func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
+func authMiddleware(provider AuthProvider, tracer trace.Tracer, renderError ErrorRenderer) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -161,7 +165,7 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 					span.SetStatus(codes.Error, "authentication failed")
 				}
 
-				http.Error(w, "Authentication required", http.StatusUnauthorized)
+				renderError(w, r, http.StatusUnauthorized, notIdentifiedMessage)
 				return
 			}
 
@@ -179,7 +183,7 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 					span.SetStatus(codes.Error, "user lookup failed")
 				}
 
-				http.Error(w, "Internal error", http.StatusInternalServerError)
+				renderError(w, r, http.StatusInternalServerError, "")
 				return
 			}
 
@@ -198,7 +202,8 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 					)
 				}
 
-				http.NotFound(w, r)
+				// A plain 404, so a blocked member is not told they were blocked.
+				renderError(w, r, http.StatusNotFound, "")
 				return
 			}
 
@@ -230,11 +235,11 @@ func authMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
 }
 
 // requireAuthMiddleware ensures the user is authenticated
-func requireAuthMiddleware() Middleware {
+func requireAuthMiddleware(renderError ErrorRenderer) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !isAuthenticated(r) {
-				http.Error(w, "Authentication required", http.StatusUnauthorized)
+				renderError(w, r, http.StatusUnauthorized, notIdentifiedMessage)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -243,7 +248,7 @@ func requireAuthMiddleware() Middleware {
 }
 
 // requireAdminMiddleware ensures the user is an admin
-func requireAdminMiddleware() Middleware {
+func requireAdminMiddleware(renderError ErrorRenderer) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !isAdmin(r) {
@@ -255,7 +260,7 @@ func requireAdminMiddleware() Middleware {
 						slog.String("path", r.URL.Path),
 					)
 				}
-				http.Error(w, "Admin access required", http.StatusForbidden)
+				renderError(w, r, http.StatusForbidden, "Only board admins can open that page.")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -280,7 +285,8 @@ func userEnrichmentMiddleware() Middleware {
 				r = r.WithContext(ctx)
 
 				if isDebugMode() {
-					w.Header().Set("X-User-ID", fmt.Sprintf("%d", user.ID))
+					// Canonical spellings, which is how Header.Set sends them.
+					w.Header().Set("X-User-Id", fmt.Sprintf("%d", user.ID))
 					w.Header().Set("X-User-Admin", fmt.Sprintf("%t", user.IsAdmin))
 				}
 			}

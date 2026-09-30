@@ -20,7 +20,6 @@
 </article>
 {{ end }}
 
-<!-- nosemgrep: python.django.security.django-no-csrf-token.django-no-csrf-token -- Go html/template, not Django; CSRF handled in middleware -->
 <form action="/thread/{{ .ID }}" method="POST">
     <div class="form-group">
         <label for="thread_body">reply <a href="/formatting" class="form-help-link">formatting help</a></label>

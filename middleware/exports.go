@@ -70,13 +70,6 @@ var (
 	// SecurityHeadersMiddleware adds security headers
 	SecurityHeadersMiddleware = securityHeadersMiddleware
 
-
-	// CSRFProtectionMiddleware validates CSRF tokens
-	CSRFProtectionMiddleware = csrfProtectionMiddleware
-
-	// RequestSizeLimitMiddleware limits request body size
-	RequestSizeLimitMiddleware = requestSizeLimitMiddleware
-
 	// LoggingMiddleware provides structured logging
 	LoggingMiddleware = loggingMiddleware
 
@@ -114,9 +107,9 @@ func NewTailscaleAuthProvider(client TailscaleClient, queries Querier, logger *s
 	return newTailscaleAuthProvider(client, queries, logger, config)
 }
 
-// NewRateLimiter creates a new rate limiter
+// NewRateLimiter creates a new rate limiter that rejects with plain text
 func NewRateLimiter(config *RateLimitConfig, logger *slog.Logger) *RateLimiter {
-	return newRateLimiter(config, logger)
+	return newRateLimiter(config, logger, plainTextErrors)
 }
 
 // NewObservabilityMiddleware creates comprehensive observability middleware
@@ -124,17 +117,27 @@ func NewObservabilityMiddleware(config *ObservabilityConfig) Middleware {
 	return newObservabilityMiddleware(config)
 }
 
-// AuthMiddleware creates authentication middleware
+// AuthMiddleware creates authentication middleware that rejects with plain text
 func AuthMiddleware(provider AuthProvider, tracer trace.Tracer) Middleware {
-	return authMiddleware(provider, tracer)
+	return authMiddleware(provider, tracer, plainTextErrors)
 }
 
-// RequireAuthMiddleware ensures the user is authenticated
+// RequireAuthMiddleware ensures the user is authenticated, rejecting with plain text
 func RequireAuthMiddleware() Middleware {
-	return requireAuthMiddleware()
+	return requireAuthMiddleware(plainTextErrors)
 }
 
-// RequireAdminMiddleware ensures the user is an admin
+// RequireAdminMiddleware ensures the user is an admin, rejecting with plain text
 func RequireAdminMiddleware() Middleware {
-	return requireAdminMiddleware()
+	return requireAdminMiddleware(plainTextErrors)
+}
+
+// CSRFProtectionMiddleware rejects cross-origin requests with plain text
+func CSRFProtectionMiddleware(config *SecurityConfig) Middleware {
+	return csrfProtectionMiddleware(config, plainTextErrors)
+}
+
+// RequestSizeLimitMiddleware limits request body size, rejecting with plain text
+func RequestSizeLimitMiddleware(maxSize int64) Middleware {
+	return requestSizeLimitMiddleware(maxSize, plainTextErrors)
 }

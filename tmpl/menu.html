@@ -1,4 +1,5 @@
 {{ define "menu" }}
+{{ if .User.ID }}
 <nav id="menu">
     <a href="/">index</a>
     <a href="/thread/new">new thread</a>
@@ -8,4 +9,5 @@
     <a href="/admin" class="admin-link">admin</a>
     {{ end }}
 </nav>
+{{ end }}
 {{ end }}

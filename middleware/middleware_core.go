@@ -12,6 +12,20 @@ import (
 // Middleware represents a standard HTTP middleware
 type Middleware func(http.Handler) http.Handler
 
+// ErrorRenderer writes the response for a request that middleware rejects.
+// message is written for the person who sent the request; an empty message
+// means the standard one for status.
+type ErrorRenderer func(w http.ResponseWriter, r *http.Request, status int, message string)
+
+// plainTextErrors is the ErrorRenderer used when none is configured, and for
+// API clients, which should not get an HTML page.
+func plainTextErrors(w http.ResponseWriter, _ *http.Request, status int, message string) {
+	if message == "" {
+		message = http.StatusText(status)
+	}
+	http.Error(w, message, status)
+}
+
 // Chain combines multiple middlewares into a single middleware
 type Chain struct {
 	middlewares []Middleware

@@ -172,7 +172,7 @@ WHERE t.id=$1 AND m.id=$2;
 SELECT tp.id, tp.body
 FROM thread_post tp LEFT JOIN member m
   ON tp.member_id=m.id
-WHERE tp.id=$1 AND m.id=$2;
+WHERE tp.id=$1 AND m.id=$2 AND tp.thread_id=$3;
 
 -- name: UpdateBoardTitle :exec
 UPDATE board_data

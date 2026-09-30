@@ -38,8 +38,8 @@ func whoIsFor(login string) *apitype.WhoIsResponse {
 }
 
 // newAdminTestHandler wires the real admin middleware chain in front of the
-// real Admin handler, so these tests exercise the authorization path rather
-// than calling the handler directly.
+// real admin handlers, so these tests exercise the authorization path rather
+// than calling the handlers directly.
 func newAdminTestHandler(t *testing.T, login string, queries ExtendedQuerier) http.Handler {
 	t.Helper()
 
@@ -71,10 +71,18 @@ func newAdminTestHandler(t *testing.T, login string, queries ExtendedQuerier) ht
 		middleware.TailscaleAuthConfig{},
 	)
 
-	ms := middleware.NewMiddlewareSetup(logger, ConvertTelemetryConfig(telemetry), authProvider)
-	ms.RateLimitConfig.Meter = telemetry.Meter
+	ms := middleware.NewMiddlewareSetup(middleware.SetupOptions{
+		Logger:        logger,
+		Telemetry:     ConvertTelemetryConfig(telemetry),
+		AuthProvider:  authProvider,
+		ErrorRenderer: dsvc.renderErrorMessage,
+	})
 
-	return ms.CreateAdminChain().ThenFunc(dsvc.Admin)
+	adminChain := ms.CreateAdminChain()
+	mux := http.NewServeMux()
+	mux.Handle("GET /admin", adminChain.ThenFunc(dsvc.AdminGET))
+	mux.Handle("POST /admin", adminChain.ThenFunc(dsvc.AdminPOST))
+	return mux
 }
 
 // adminPost issues a POST to /admin through the chain.

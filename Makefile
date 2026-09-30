@@ -39,6 +39,17 @@ BAZEL_QUERY_BIN := cquery --config=silent \
 # Change the hostname to anything you wish to use for testing
 BAZEL_RUN_TRAILING_ARGS = -hostname $(DEV_HOSTNAME) -debug
 
+# golangci-lint refuses to run when it was built with a Go older than go.mod's,
+# so a binary left in ~/go/bin breaks as soon as go.mod moves forward. `go run`
+# builds the release CI uses (.golangci-lint-version) with your toolchain and
+# caches it, so only the first run after a version change is slow.
+GOLANGCI_LINT_VERSION := $(shell cat .golangci-lint-version)
+GOLANGCI_LINT := go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+# `make lint` reports only issues on lines changed since the branch left this
+# revision (its merge base with HEAD), which is what CI fails on for a pull
+# request. The tree has older issues; `make lint-all` shows them.
+LINT_BASE ?= main
+
 # --- Dev environment -------------------------------------------------------
 # The node this repo registers on your tailnet when you `make dev`.
 DEV_HOSTNAME ?= discuss-dev
@@ -67,8 +78,8 @@ DEV_DATABASE_URL ?= postgres://$(DEV_DB_USER)@127.0.0.1:$(DEV_DB_PORT)/$(DEV_DB_
 DEV_ENV_FILE ?= $(HOME)/.config/tdiscuss/dev.env
 DEV_ARGS := -hostname $(DEV_HOSTNAME) -debug
 
-.PHONY: help all clean clean-db test run run-binary genhtml release coverage \
-	check-go-versions build dev dev-authkey dev-clean dev-env dev-db \
+.PHONY: help all clean clean-db test lint lint-all run run-binary genhtml release \
+	coverage check-go-versions build dev dev-authkey dev-clean dev-env dev-db \
 	dev-db-stop dev-db-reset dev-db-psql dev-admin
 
 .DEFAULT_GOAL := help
@@ -101,6 +112,12 @@ build: ## Build the binary for this platform
 test: ## Run all tests
 	@echo "Testing all targets"
 	$(BAZEL) $(BAZEL_TEST_ARGS) //...
+
+lint: ## Lint lines changed since branching from main, as CI does (LINT_BASE=... to change)
+	$(GOLANGCI_LINT) run --new-from-merge-base=$(LINT_BASE) ./...
+
+lint-all: ## Lint the whole tree, including issues that predate your changes
+	$(GOLANGCI_LINT) run ./...
 
 dev: build ## Register the dev node on your tailnet and run it
 	@set -eu; \
