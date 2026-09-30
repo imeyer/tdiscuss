@@ -78,36 +78,24 @@ jobs:
       contents: write
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - name: Set pre-release flag
-      id: release_type
-      env:
-        REF: ${{ github.ref }}
-      run: |
-        if [[ "$REF" == *beta* ]]; then
-          echo "type=pre-release" >> "$GITHUB_OUTPUT"
-        else
-          echo "type=release" >> "$GITHUB_OUTPUT"
-        fi
     - name: Download artifacts
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-    - name: Create Release
+    # Releases are immutable once published, so assets can only be attached to
+    # a draft. This creates the draft with every binary; publish it by hand
+    # after editing the notes (gh release edit <tag> --draft=false).
+    - name: Create draft release
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        TAG: ${{ github.ref_name }}
       run: |
-        if [[ "${{ steps.release_type.outputs.type }}" == "pre-release" ]]; then
-          gh release create ${GITHUB_REF#refs/tags/} \
-            --title "Release ${GITHUB_REF#refs/tags/}" \
-            --prerelease \
-            --generate-notes
-        else
-          gh release create ${GITHUB_REF#refs/tags/} \
-            --title "Release ${GITHUB_REF#refs/tags/}" \
-            --generate-notes
+        flags=()
+        # Semver pre-release tags (v1.2.3-rc1, v1.2.3-beta2) never become Latest.
+        if [[ "$TAG" == *-* ]]; then
+          flags+=(--prerelease)
         fi
-    - name: Upload Release Assets
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        for artifact in tdiscuss-*; do
-          gh release upload ${GITHUB_REF#refs/tags/} $artifact/$artifact
-        done
+        gh release create "$TAG" tdiscuss-*/tdiscuss-* \
+          --draft \
+          --verify-tag \
+          --title "Release $TAG" \
+          --generate-notes \
+          "${flags[@]}"
