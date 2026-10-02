@@ -244,6 +244,38 @@ func TestValidateAdminForm(t *testing.T) {
 			wantWindow: 0,
 			wantError:  true,
 		},
+		{
+			name:       "edit window 0 means no limit",
+			boardTitle: "My Forum",
+			editWindow: "0",
+			wantTitle:  "My Forum",
+			wantWindow: 0,
+			wantError:  false,
+		},
+		{
+			name:       "edit window at the 24 hour cap",
+			boardTitle: "My Forum",
+			editWindow: "86400",
+			wantTitle:  "My Forum",
+			wantWindow: 86400,
+			wantError:  false,
+		},
+		{
+			name:       "edit window one second over the cap",
+			boardTitle: "My Forum",
+			editWindow: "86401",
+			wantTitle:  "My Forum",
+			wantWindow: 0,
+			wantError:  true,
+		},
+		{
+			name:       "negative edit window",
+			boardTitle: "My Forum",
+			editWindow: "-1",
+			wantTitle:  "My Forum",
+			wantWindow: 0,
+			wantError:  true,
+		},
 	}
 
 	for _, tt := range tests {

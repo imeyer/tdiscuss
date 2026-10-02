@@ -12,6 +12,7 @@ import (
 
 	"github.com/imeyer/tdiscuss/middleware"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
@@ -424,4 +425,62 @@ func TestAdminGET_RendersMemberList(t *testing.T) {
 	// Three forms total: demote 42, promote 43, unblock 43.
 	assert.Equal(t, 3, strings.Count(body, `name="member_id"`),
 		"self has no actions and an admin gets no block action")
+}
+
+// The edit window is 0 for no limit, or up to MaxEditWindow (24 hours).
+// Anything else is refused rather than saved: a negative window would stop
+// every edit.
+func TestAdminPOST_EditWindow(t *testing.T) {
+	for _, tt := range []struct {
+		window   string
+		wantCode int
+		want     *int32
+	}{
+		{"0", http.StatusSeeOther, new(int32(0))},
+		{"3600", http.StatusSeeOther, new(int32(3600))},
+		{"86400", http.StatusSeeOther, new(int32(86400))},
+		{"86401", http.StatusBadRequest, nil},
+		{"-1", http.StatusBadRequest, nil},
+		{"", http.StatusBadRequest, nil},
+	} {
+		t.Run(tt.window, func(t *testing.T) {
+			var saved *int32
+			queries := &MockQueries{
+				IsMemberAdminFunc: func(_ context.Context, _ int64) (bool, error) {
+					return true, nil
+				},
+				UpdateBoardEditWindowFunc: func(_ context.Context, arg pgtype.Int4) error {
+					saved = &arg.Int32
+					return nil
+				},
+			}
+
+			rec := adminPost(t, newAdminTestHandler(t, "admin@example.com", queries),
+				"action=update_config&board_title=Board&edit_window="+tt.window)
+
+			assert.Equal(t, tt.wantCode, rec.Code)
+			assert.Equal(t, tt.want, saved)
+		})
+	}
+}
+
+// The admin page must tell admins the edit window's limits, and the input
+// must enforce the same maximum the server does.
+func TestAdminGET_StatesEditWindowLimits(t *testing.T) {
+	queries := &MockQueries{
+		CreateOrReturnIDFunc: func(_ context.Context, _ string) (CreateOrReturnIDRow, error) {
+			return CreateOrReturnIDRow{ID: 1, IsAdmin: true}, nil
+		},
+	}
+	h := newAdminTestHandler(t, "admin@example.com", queries)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.RemoteAddr = "100.64.0.10:12345"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "0 for no limit, at most 86400, which is 24 hours")
+	assert.Contains(t, body, `min="0" max="86400"`)
 }

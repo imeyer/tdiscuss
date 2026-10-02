@@ -195,6 +195,8 @@ func (s *DiscussService) AdminGET(w http.ResponseWriter, r *http.Request) {
 	s.renderTemplate(w, r, "admin.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"BoardData":        boardData,
+		"MaxEditWindow":    MaxEditWindow,
+		"MaxEditHours":     MaxEditWindow / 3600,
 		"Members":          memberData,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
@@ -378,38 +380,30 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 		// TODO: Implement DeleteThread query
 		s.logger.InfoContext(r.Context(), "DeleteThread not implemented", slog.Int64("threadID", threadID))
 	case "update_config":
-		boardTitle := r.Form.Get("board_title")
-		editWindowStr := r.Form.Get("edit_window")
-
-		if boardTitle != "" {
-			if err := s.queries.UpdateBoardTitle(r.Context(), boardTitle); err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to update board title",
-					slog.String("error", err.Error()))
-				s.renderError(w, r, http.StatusInternalServerError)
-				return
-			}
+		// The edit window is in seconds, 0 meaning no limit, up to MaxEditWindow.
+		boardTitle, editWindow, errs := ValidateAdminForm(r.Form.Get("board_title"), r.Form.Get("edit_window"))
+		if len(errs) > 0 {
+			s.renderErrorMessage(w, r, http.StatusBadRequest, errs.Error())
+			return
 		}
 
-		if editWindowStr != "" {
-			editWindow, err := strconv.ParseInt(editWindowStr, 10, 32)
-			if err != nil {
-				s.logger.ErrorContext(r.Context(), "invalid edit window value",
-					slog.String("error", err.Error()))
-				s.renderError(w, r, http.StatusBadRequest)
-				return
-			}
-
-			if err := s.queries.UpdateBoardEditWindow(r.Context(), pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil {
-				s.logger.ErrorContext(r.Context(), "failed to update edit window",
-					slog.String("error", err.Error()))
-				s.renderError(w, r, http.StatusInternalServerError)
-				return
-			}
+		if err := s.queries.UpdateBoardTitle(ctx, boardTitle); err != nil {
+			s.logger.ErrorContext(ctx, "failed to update board title",
+				slog.String("error", err.Error()))
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
 		}
 
-		s.logger.InfoContext(r.Context(), "board config updated successfully",
+		if err := s.queries.UpdateBoardEditWindow(ctx, pgtype.Int4{Int32: int32(editWindow), Valid: true}); err != nil { //nolint:gosec // G115: ValidateAdminForm bounds it to 0..MaxEditWindow
+			s.logger.ErrorContext(ctx, "failed to update edit window",
+				slog.String("error", err.Error()))
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
+		}
+
+		s.logger.InfoContext(ctx, "board config updated successfully",
 			slog.String("board_title", boardTitle),
-			slog.String("edit_window", editWindowStr))
+			slog.Int64("edit_window", editWindow))
 	default:
 		s.logger.ErrorContext(r.Context(), "unknown action", slog.String("action", action))
 		s.renderError(w, r, http.StatusBadRequest)
@@ -456,9 +450,8 @@ func (s *DiscussService) CreateThread(w http.ResponseWriter, r *http.Request) {
 	span.AddEvent("r.ParseSubject")
 	// For subjects, just sanitize HTML without markdown parsing (single-line text)
 	subject := parseHTMLStrict(subjectInput)
-	span.AddEvent("r.ParseBody")
-	// For body content, parse markdown and allow more HTML tags
-	body := parseHTMLLessStrict(parseMarkdownToHTML(bodyInput))
+	// The body is stored as markdown and rendered on display.
+	body := bodyInput
 
 	span.AddEvent("BeginTxn")
 	tx, err := s.dbconn.Begin(r.Context())
@@ -551,7 +544,8 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	body := parseHTMLLessStrict(parseMarkdownToHTML(bodyInput))
+	// The body is stored as markdown and rendered on display.
+	body := bodyInput
 
 	if err := s.queries.CreateThreadPost(r.Context(), CreateThreadPostParams{
 		ThreadID: threadID,
@@ -693,8 +687,8 @@ func (s *DiscussService) EditThreadPOST(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// For body content, parse markdown and allow more HTML tags
-	body := parseHTMLLessStrict(parseMarkdownToHTML(bodyInput))
+	// The body is stored as markdown and rendered on display.
+	body := bodyInput
 	// For subjects, just sanitize HTML without markdown parsing (single-line text)
 	subject := parseHTMLStrict(subjectInput)
 
@@ -845,7 +839,8 @@ func (s *DiscussService) EditThreadPostPOST(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	body := parseHTMLLessStrict(parseMarkdownToHTML(bodyInput))
+	// The body is stored as markdown and rendered on display.
+	body := bodyInput
 
 	postIDStr := r.PathValue("pid")
 	postID, err := strconv.ParseInt(postIDStr, 10, 64)
@@ -1062,10 +1057,8 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	var threadPosts []ThreadPostTemplateData
 	for _, post := range posts {
 		threadPosts = append(threadPosts, ThreadPostTemplateData{
-			ID: post.ID,
-			// Body is sanitized with bluemonday (bodyPolicy) on write, so the
-			// stored value is safe to render as HTML here.
-			Body:       template.HTML(post.Body.String), //nolint:gosec // G203: see above
+			ID:         post.ID,
+			Body:       renderBody(post.Body.String),
 			ThreadID:   post.ThreadID,
 			MemberID:   post.MemberID,
 			Email:      post.Email,
@@ -1180,10 +1173,9 @@ func (s *DiscussService) FormattingGuide(w http.ResponseWriter, r *http.Request)
 }
 
 // literalMarkdown renders markdown written in this file as HTML, the way a
-// post body is rendered. The input is ours and the output is sanitized with
-// bluemonday, so it is safe to render unescaped.
+// post body is rendered.
 func literalMarkdown(md string) template.HTML {
-	return template.HTML(parseHTMLLessStrict(parseMarkdownToHTML(md))) //nolint:gosec // G203: see above
+	return renderBody(md)
 }
 
 // OTELMiddleware provides OpenTelemetry instrumentation for HTTP handlers

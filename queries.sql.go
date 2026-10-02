@@ -168,10 +168,11 @@ SELECT m.email AS email,
   tp.body AS body
 FROM thread t
 LEFT JOIN thread_post tp
-  ON tp.thread_id=t.id
+  ON tp.id=t.first_post_id
 LEFT JOIN member m
   ON t.member_id=m.id
 WHERE t.id=$1 AND m.id=$2
+  AND COALESCE(t.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)
 `
 
 type GetThreadForEditParams struct {
@@ -205,6 +206,7 @@ SELECT tp.id, tp.body
 FROM thread_post tp LEFT JOIN member m
   ON tp.member_id=m.id
 WHERE tp.id=$1 AND m.id=$2 AND tp.thread_id=$3
+  AND COALESCE(tp.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)
 `
 
 type GetThreadPostForEditParams struct {
@@ -419,7 +421,7 @@ SELECT
   t.subject,
   t.id as thread_id,
   m.is_admin,
-  (CASE WHEN (m.email = $2 AND t.date_posted >= NOW() - INTERVAL '900 seconds') THEN 't' ELSE 'f' END)::boolean as can_edit
+  (CASE WHEN (m.email = $2 AND COALESCE(tp.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)) THEN 't' ELSE 'f' END)::boolean as can_edit
 FROM
   thread_post tp
 LEFT JOIN
@@ -493,7 +495,9 @@ SELECT
   t.posts,
   t.views,
   tp.body,
-  (CASE WHEN (m.email = $1 AND t.date_posted >= NOW() - INTERVAL '900 seconds') THEN 't' ELSE 'f' END)::boolean as can_edit,
+  -- Edit window checks read board_data.edit_window, in seconds; 0 means no
+  -- limit. NULLIF makes the cutoff NULL for 0, and COALESCE turns that into true.
+  (CASE WHEN (m.email = $1 AND COALESCE(t.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)) THEN 't' ELSE 'f' END)::boolean as can_edit,
   (CASE WHEN tm.last_view_posts IS null THEN 0 ELSE tm.last_view_posts END) as last_view_posts,
   (CASE WHEN tm.date_posted IS NOT null AND tm.undot IS false AND tm.member_id IS NOT null THEN 't' ELSE 'f' END)::boolean as dot,
   t.sticky,
@@ -667,11 +671,11 @@ func (q *Queries) UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberP
 }
 
 const updateThread = `-- name: UpdateThread :exec
-UPDATE thread SET
+UPDATE thread t SET
   subject = $1
-WHERE id = $2
-  AND member_id = $3
-  AND date_posted >= NOW() - INTERVAL '900 seconds'
+WHERE t.id = $2
+  AND t.member_id = $3
+  AND COALESCE(t.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)
 `
 
 type UpdateThreadParams struct {
@@ -686,11 +690,11 @@ func (q *Queries) UpdateThread(ctx context.Context, arg UpdateThreadParams) erro
 }
 
 const updateThreadPost = `-- name: UpdateThreadPost :exec
-UPDATE thread_post SET
+UPDATE thread_post tp SET
   body = $1
-WHERE id = $2
-  AND member_id = $3
-  AND date_posted >= NOW() - INTERVAL '900 seconds'
+WHERE tp.id = $2
+  AND tp.member_id = $3
+  AND COALESCE(tp.date_posted >= NOW() - (SELECT NULLIF(bd.edit_window, 0) FROM board_data bd ORDER BY bd.id LIMIT 1) * INTERVAL '1 second', true)
 `
 
 type UpdateThreadPostParams struct {

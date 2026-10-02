@@ -3,15 +3,19 @@ package main
 import (
 	"context"
 	"errors"
+	"html"
 	"html/template"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/imeyer/tdiscuss/middleware"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"tailscale.com/client/tailscale/apitype"
@@ -420,6 +424,69 @@ func TestPostEditChecksThread(t *testing.T) {
 	rec := send(http.MethodPost, "/thread/7/99/edit")
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
 	assert.Equal(t, "/thread/7", rec.Header().Get("Location"))
+}
+
+// Editing a post must save what the member typed in the edit form. The form
+// once named its textarea thread_body while the handler read
+// thread_post_body, so every edit failed validation. Bodies are stored as
+// markdown, so the form shows markdown and saving it stores it unchanged.
+func TestPostEditFormSavesMarkdown(t *testing.T) {
+	const stored = "**bold** and _em_"
+	var saved string
+	queries := &MockQueries{
+		GetThreadPostForEditFunc: func(_ context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error) {
+			return GetThreadPostForEditRow{ID: arg.ID, Body: pgtype.Text{String: stored, Valid: true}}, nil
+		},
+		UpdateThreadPostFunc: func(_ context.Context, arg UpdateThreadPostParams) error {
+			saved = arg.Body.String
+			return nil
+		},
+	}
+	tailClient := &MockTailscaleClient{
+		WhoIsFunc: func(_ context.Context, _ string) (*apitype.WhoIsResponse, error) {
+			return whoIsFor(routesTestLogin), nil
+		},
+	}
+	h := newRoutesTestHandlerFor(t, tailClient, queries, nil)
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, routesRequest(http.MethodGet, "/thread/7/99/edit", ""))
+	require.Equal(t, http.StatusOK, rec.Code)
+	m := regexp.MustCompile(`<textarea[^>]*name="([^"]+)"[^>]*>([^<]*)</textarea>`).FindStringSubmatch(rec.Body.String())
+	require.NotNil(t, m, "edit form has no textarea")
+	assert.Equal(t, stored, html.UnescapeString(m[2]), "edit form shows the stored markdown")
+
+	edited := "~~gone~~ *new*"
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, routesRequest(http.MethodPost, "/thread/7/99/edit", url.Values{m[1]: {edited}}.Encode()))
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, edited, saved)
+}
+
+// Bodies are stored as markdown and rendered when the thread is shown. The
+// rendering must sanitize, since nothing is sanitized on write any more.
+func TestThreadRendersStoredMarkdown(t *testing.T) {
+	queries := &MockQueries{
+		ListThreadPostsFunc: func(_ context.Context, _ ListThreadPostsParams) ([]ListThreadPostsRow, error) {
+			return []ListThreadPostsRow{{
+				ID:   1,
+				Body: pgtype.Text{String: "**bold**\n\n<script>alert(1)</script>\n\n# heading", Valid: true},
+			}}, nil
+		},
+	}
+	tailClient := &MockTailscaleClient{
+		WhoIsFunc: func(_ context.Context, _ string) (*apitype.WhoIsResponse, error) {
+			return whoIsFor(routesTestLogin), nil
+		},
+	}
+	rec := httptest.NewRecorder()
+	newRoutesTestHandlerFor(t, tailClient, queries, nil).ServeHTTP(rec, routesRequest(http.MethodGet, "/thread/3", ""))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "<strong>bold</strong>")
+	assert.NotContains(t, body, "alert(1)")
+	assert.NotContains(t, body, "<h1>heading")
 }
 
 // Each save must reach its POST handler and redirect to what it saved. The

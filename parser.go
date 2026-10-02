@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html"
+	"html/template"
 	"regexp"
 	"strconv"
 
@@ -21,6 +22,24 @@ import (
 // range, so it can never match.
 var neverMatchEmail = regexp.MustCompile(`[^\x00-\x{10FFFF}]`)
 
+// markdown renders post bodies. Goldmark instances are safe for concurrent
+// use, so one is shared rather than built for every post on every page view.
+var markdown = goldmark.New(
+	goldmark.WithExtensions(
+		emoji.Emoji,
+		extension.Strikethrough,
+		extension.Table,
+		extension.TaskList,
+		// Linkify URLs but not email addresses.
+		extension.NewLinkify(
+			extension.WithLinkifyEmailRegexp(neverMatchEmail),
+		),
+	),
+	goldmark.WithRendererOptions(
+		gmhtml.WithUnsafe(),
+	),
+)
+
 func parseMarkdownToHTML(text string) (result string) {
 	// Defense in depth: goldmark extensions have panicked on malformed input
 	// before. Recover so a single crafted post can't 500 the request.
@@ -32,27 +51,19 @@ func parseMarkdownToHTML(text string) (result string) {
 
 	var buf bytes.Buffer
 
-	md := goldmark.New(
-		goldmark.WithExtensions(
-			emoji.Emoji,
-			extension.Strikethrough,
-			extension.Table,
-			extension.TaskList,
-			// Linkify URLs but not email addresses.
-			extension.NewLinkify(
-				extension.WithLinkifyEmailRegexp(neverMatchEmail),
-			),
-		),
-		goldmark.WithRendererOptions(
-			gmhtml.WithUnsafe(),
-		),
-	)
-
-	if err := md.Convert([]byte(text), &buf); err != nil {
+	if err := markdown.Convert([]byte(text), &buf); err != nil {
 		return text
 	}
 
 	return buf.String()
+}
+
+// renderBody turns a stored post body into HTML for display. Bodies are
+// stored as the markdown the member wrote, so the edit form can show it
+// again. The output is sanitized with bodyPolicy, so it is safe to render
+// unescaped.
+func renderBody(md string) template.HTML {
+	return template.HTML(parseHTMLLessStrict(parseMarkdownToHTML(md))) //nolint:gosec // G203: see above
 }
 
 func parseHTMLStrict(text string) string {
@@ -64,8 +75,12 @@ func parseHTMLStrict(text string) string {
 }
 
 func parseHTMLLessStrict(text string) string {
-	return bodyPolicy().Sanitize(text)
+	return bodyPolicyShared.Sanitize(text)
 }
+
+// bodyPolicyShared is built once: building a policy compiles regexps, and a
+// policy is safe for concurrent use once built.
+var bodyPolicyShared = bodyPolicy()
 
 // bodyPolicy returns a bluemonday policy for thread/post bodies.
 // Based on UGCPolicy but excludes headings (h1-h6) to prevent
