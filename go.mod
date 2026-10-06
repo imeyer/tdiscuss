@@ -23,7 +23,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/time v0.16.0
-	tailscale.com v1.102.4
+	tailscale.com v1.102.5
 )
 
 require (
