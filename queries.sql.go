@@ -160,6 +160,28 @@ func (q *Queries) GetMemberId(ctx context.Context, email string) (int64, error) 
 	return id, err
 }
 
+const getThreadForDisplay = `-- name: GetThreadForDisplay :one
+SELECT
+  t.subject,
+  COALESCE(t.locked, false)::boolean AS locked
+FROM thread t
+WHERE t.id=$1
+`
+
+type GetThreadForDisplayRow struct {
+	Subject string
+	Locked  bool
+}
+
+// The thread page needs the subject and whether replies are still accepted.
+// COALESCE covers rows written before the column had a default.
+func (q *Queries) GetThreadForDisplay(ctx context.Context, id int64) (GetThreadForDisplayRow, error) {
+	row := q.db.QueryRow(ctx, getThreadForDisplay, id)
+	var i GetThreadForDisplayRow
+	err := row.Scan(&i.Subject, &i.Locked)
+	return i, err
+}
+
 const getThreadForEdit = `-- name: GetThreadForEdit :one
 SELECT m.email AS email,
   t.id AS thread_id,
@@ -249,15 +271,13 @@ func (q *Queries) GetThreadSequenceId(ctx context.Context) (int64, error) {
 	return currval, err
 }
 
-const getThreadSubjectById = `-- name: GetThreadSubjectById :one
-SELECT subject FROM thread WHERE id=$1
+const incrementThreadViews = `-- name: IncrementThreadViews :exec
+UPDATE thread SET views = COALESCE(views, 0) + 1 WHERE id=$1
 `
 
-func (q *Queries) GetThreadSubjectById(ctx context.Context, id int64) (string, error) {
-	row := q.db.QueryRow(ctx, getThreadSubjectById, id)
-	var subject string
-	err := row.Scan(&subject)
-	return subject, err
+func (q *Queries) IncrementThreadViews(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, incrementThreadViews, id)
+	return err
 }
 
 const isMemberAdmin = `-- name: IsMemberAdmin :one
@@ -613,6 +633,20 @@ type SetMemberBlockedParams struct {
 
 func (q *Queries) SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error {
 	_, err := q.db.Exec(ctx, setMemberBlocked, arg.IsBlocked, arg.ID)
+	return err
+}
+
+const setThreadLocked = `-- name: SetThreadLocked :exec
+UPDATE thread SET locked = $1::boolean WHERE id = $2
+`
+
+type SetThreadLockedParams struct {
+	Locked bool
+	ID     int64
+}
+
+func (q *Queries) SetThreadLocked(ctx context.Context, arg SetThreadLockedParams) error {
+	_, err := q.db.Exec(ctx, setThreadLocked, arg.Locked, arg.ID)
 	return err
 }
 

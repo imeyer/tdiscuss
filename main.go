@@ -80,15 +80,22 @@ func run() int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Telemetry is optional: an unreachable collector or exporter misconfigured
+	// in the environment must not stop the board from serving. On failure we
+	// fall back to no-op instruments, because the handlers, the query wrapper
+	// and the middleware all call Tracer.Start and Record unconditionally.
 	telemetry, cleanup, err := setupTelemetry(ctx, config)
 	if err != nil {
-		logger.ErrorContext(ctx, "failed to setup telemetry: %w", slog.String("error", err.Error()))
+		logger.ErrorContext(ctx, "failed to setup telemetry, continuing without it",
+			slog.String("error", err.Error()))
+		telemetry, cleanup = noopTelemetry()
 	}
 	defer func() {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := cleanup(cleanupCtx); err != nil {
-			logger.ErrorContext(ctx, "failed to cleanup telemetry: %w", slog.String("error", err.Error()))
+			logger.ErrorContext(ctx, "failed to cleanup telemetry",
+				slog.String("error", err.Error()))
 		}
 	}()
 
@@ -106,7 +113,6 @@ func run() int {
 		syscall.SIGQUIT, // Quit from keyboard
 		syscall.SIGHUP,  // Hang up detected on controlling terminal
 	)
-
 
 	dbconn, err := setupDatabase(ctx, logger)
 	if err != nil {

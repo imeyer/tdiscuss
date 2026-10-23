@@ -2,6 +2,19 @@
 
 <h1 class="subject">{{ .Subject }}</h1>
 
+{{ if .User.IsAdmin }}
+<form action="/admin" method="POST" class="inline-form thread-admin-actions">
+    <input type="hidden" name="thread_id" value="{{ .ID }}">
+    {{ if .Locked }}
+    <input type="hidden" name="action" value="unlock_thread">
+    <button type="submit">unlock thread</button>
+    {{ else }}
+    <input type="hidden" name="action" value="lock_thread">
+    <button type="submit">lock thread</button>
+    {{ end }}
+</form>
+{{ end }}
+
 {{ range .ThreadPosts }}
 <article class="threadpost-bubble" id="post-{{ .ID }}">
     <div class="threadpost-header">
@@ -20,6 +33,9 @@
 </article>
 {{ end }}
 
+{{ if .Locked }}
+<div class="thread-locked">This thread is locked; no new replies.</div>
+{{ else }}
 <form action="/thread/{{ .ID }}" method="POST">
     <div class="form-group">
         <label for="thread_body">reply <a href="/formatting" class="form-help-link">formatting help</a></label>
@@ -29,5 +45,6 @@
         <button type="submit">Post it!</button>
     </div>
 </form>
+{{ end }}
 
 {{ template "footer" . }}

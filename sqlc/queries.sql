@@ -154,8 +154,20 @@ SELECT
   edit_window
 FROM board_data;
 
--- name: GetThreadSubjectById :one
-SELECT subject FROM thread WHERE id=$1;
+-- name: GetThreadForDisplay :one
+-- The thread page needs the subject and whether replies are still accepted.
+-- COALESCE covers rows written before the column had a default.
+SELECT
+  t.subject,
+  COALESCE(t.locked, false)::boolean AS locked
+FROM thread t
+WHERE t.id=$1;
+
+-- name: IncrementThreadViews :exec
+UPDATE thread SET views = COALESCE(views, 0) + 1 WHERE id=$1;
+
+-- name: SetThreadLocked :exec
+UPDATE thread SET locked = sqlc.arg(locked)::boolean WHERE id = sqlc.arg(id);
 
 -- name: GetThreadForEdit :one
 SELECT m.email AS email,

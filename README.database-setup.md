@@ -151,6 +151,7 @@ psql -U tdiscuss -d tdiscuss -f sqlc/remove_auto_admin_bootstrap.sql
 | ---- | ------------ |
 | `add_is_blocked_to_member.sql` | Adds `member.is_blocked` for blocking members instead of deleting them |
 | `remove_auto_admin_bootstrap.sql` | Stops promoting the first member to sign in to admin, and drops per-request `RAISE NOTICE` logging. Safe on a live database, safe to apply more than once, and existing admins are unaffected. Grant admin with a [capability grant](README.md#admin-access) instead. |
+| `fix_create_or_return_id.sql` | Makes `createOrReturnID` safe when a member's first requests arrive concurrently (a first page load authenticates several at once), which previously raised `23505` and returned a 500. Matches on `LOWER(email)` and makes `member_profile.member_id` unique so the profile insert is idempotent. Safe on a live database and safe to apply more than once. |
 
 ### New members and admin
 

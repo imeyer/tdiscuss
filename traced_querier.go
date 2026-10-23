@@ -314,19 +314,46 @@ func (t *TracedQueriesWrapper) GetThreadSequenceId(ctx context.Context) (int64, 
 	return id, nil
 }
 
-// GetThreadSubjectById implements the Querier interface with tracing
-func (t *TracedQueriesWrapper) GetThreadSubjectById(ctx context.Context, id int64) (string, error) {
-	ctx, span := t.telemetry.Tracer.Start(ctx, "GetThreadSubjectById(query)")
+// GetThreadForDisplay implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) GetThreadForDisplay(ctx context.Context, id int64) (GetThreadForDisplayRow, error) {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "GetThreadForDisplay(query)")
 	defer span.End()
 
 	start := time.Now()
-	subject, err := t.wrapped.GetThreadSubjectById(ctx, id)
+	row, err := t.wrapped.GetThreadForDisplay(ctx, id)
 	duration := time.Since(start).Seconds()
 
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return subject, fmt.Errorf("query error: %w", err)
+		return row, fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("thread.id", id),
+		attribute.Bool("thread.locked", row.Locked),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "GetThreadForDisplay", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return row, nil
+}
+
+// IncrementThreadViews implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) IncrementThreadViews(ctx context.Context, id int64) error {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "IncrementThreadViews(query)")
+	defer span.End()
+
+	start := time.Now()
+	err := t.wrapped.IncrementThreadViews(ctx, id)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("query error: %w", err)
 	}
 
 	span.SetAttributes(
@@ -334,10 +361,37 @@ func (t *TracedQueriesWrapper) GetThreadSubjectById(ctx context.Context, id int6
 		attribute.Float64("request.duration", duration),
 	)
 
-	t.recordMetrics(ctx, "GetThreadSubjectById", duration)
+	t.recordMetrics(ctx, "IncrementThreadViews", duration)
 	span.SetStatus(codes.Ok, "")
 
-	return subject, nil
+	return nil
+}
+
+// SetThreadLocked implements the Querier interface with tracing
+func (t *TracedQueriesWrapper) SetThreadLocked(ctx context.Context, arg SetThreadLockedParams) error {
+	ctx, span := t.telemetry.Tracer.Start(ctx, "SetThreadLocked(query)")
+	defer span.End()
+
+	start := time.Now()
+	err := t.wrapped.SetThreadLocked(ctx, arg)
+	duration := time.Since(start).Seconds()
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("query error: %w", err)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("thread.id", arg.ID),
+		attribute.Bool("thread.locked", arg.Locked),
+		attribute.Float64("request.duration", duration),
+	)
+
+	t.recordMetrics(ctx, "SetThreadLocked", duration)
+	span.SetStatus(codes.Ok, "")
+
+	return nil
 }
 
 // ListMemberThreads implements the Querier interface with tracing

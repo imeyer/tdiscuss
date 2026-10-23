@@ -17,11 +17,14 @@ type Querier interface {
 	GetBoardData(ctx context.Context) (GetBoardDataRow, error)
 	GetMember(ctx context.Context, id int64) (GetMemberRow, error)
 	GetMemberId(ctx context.Context, email string) (int64, error)
+	// The thread page needs the subject and whether replies are still accepted.
+	// COALESCE covers rows written before the column had a default.
+	GetThreadForDisplay(ctx context.Context, id int64) (GetThreadForDisplayRow, error)
 	GetThreadForEdit(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
 	GetThreadPostForEdit(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
 	GetThreadPostSequenceId(ctx context.Context) (int64, error)
 	GetThreadSequenceId(ctx context.Context) (int64, error)
-	GetThreadSubjectById(ctx context.Context, id int64) (string, error)
+	IncrementThreadViews(ctx context.Context, id int64) error
 	IsMemberAdmin(ctx context.Context, id int64) (bool, error)
 	ListMemberThreads(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
 	ListMembers(ctx context.Context) ([]ListMembersRow, error)
@@ -29,6 +32,7 @@ type Querier interface {
 	ListThreads(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
 	SetMemberAdmin(ctx context.Context, arg SetMemberAdminParams) error
 	SetMemberBlocked(ctx context.Context, arg SetMemberBlockedParams) error
+	SetThreadLocked(ctx context.Context, arg SetThreadLockedParams) error
 	UpdateBoardEditWindow(ctx context.Context, editWindow pgtype.Int4) error
 	UpdateBoardTitle(ctx context.Context, title string) error
 	UpdateMemberProfileByID(ctx context.Context, arg UpdateMemberProfileByIDParams) error

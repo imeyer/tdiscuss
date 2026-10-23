@@ -41,7 +41,9 @@ type MockQueries struct {
 	GetThreadForEditFunc      func(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error)
 	GetThreadPostForEditFunc  func(ctx context.Context, arg GetThreadPostForEditParams) (GetThreadPostForEditRow, error)
 	GetThreadSequenceIdFunc   func(ctx context.Context) (int64, error)
-	GetThreadSubjectByIdFunc  func(ctx context.Context, id int64) (string, error)
+	GetThreadForDisplayFunc   func(ctx context.Context, id int64) (GetThreadForDisplayRow, error)
+	IncrementThreadViewsFunc  func(ctx context.Context, id int64) error
+	SetThreadLockedFunc       func(ctx context.Context, arg SetThreadLockedParams) error
 	ListMemberThreadsFunc     func(ctx context.Context, memberID int64) ([]ListMemberThreadsRow, error)
 	ListThreadPostsFunc       func(ctx context.Context, arg ListThreadPostsParams) ([]ListThreadPostsRow, error)
 	ListThreadsFunc           func(ctx context.Context, arg ListThreadsParams) ([]ListThreadsRow, error)
@@ -141,12 +143,31 @@ func (m *MockQueries) GetThreadSequenceId(ctx context.Context) (int64, error) {
 	return 1, nil
 }
 
-func (m *MockQueries) GetThreadSubjectById(ctx context.Context, id int64) (string, error) {
-	if m.GetThreadSubjectByIdFunc != nil {
-		return m.GetThreadSubjectByIdFunc(ctx, id)
+func (m *MockQueries) GetThreadForDisplay(ctx context.Context, id int64) (GetThreadForDisplayRow, error) {
+	if m.GetThreadForDisplayFunc != nil {
+		return m.GetThreadForDisplayFunc(ctx, id)
 	}
 
-	return "Mock Thread Subject", nil
+	return GetThreadForDisplayRow{
+		Subject: "Mock Thread Subject",
+		Locked:  false,
+	}, nil
+}
+
+func (m *MockQueries) IncrementThreadViews(ctx context.Context, id int64) error {
+	if m.IncrementThreadViewsFunc != nil {
+		return m.IncrementThreadViewsFunc(ctx, id)
+	}
+
+	return nil
+}
+
+func (m *MockQueries) SetThreadLocked(ctx context.Context, arg SetThreadLockedParams) error {
+	if m.SetThreadLockedFunc != nil {
+		return m.SetThreadLockedFunc(ctx, arg)
+	}
+
+	return nil
 }
 
 func (m *MockQueries) GetThreadForEdit(ctx context.Context, arg GetThreadForEditParams) (GetThreadForEditRow, error) {

@@ -376,6 +376,35 @@ func (s *DiscussService) AdminPOST(w http.ResponseWriter, r *http.Request) {
 
 		http.Redirect(w, r, "/admin", http.StatusSeeOther)
 		return
+	case "lock_thread", "unlock_thread":
+		if threadID <= 0 {
+			s.logger.ErrorContext(ctx, "invalid thread ID", slog.Int64("threadID", threadID))
+			s.renderError(w, r, http.StatusBadRequest)
+			return
+		}
+
+		locked := action == "lock_thread"
+		if err := s.queries.SetThreadLocked(ctx, SetThreadLockedParams{
+			ID:     threadID,
+			Locked: locked,
+		}); err != nil {
+			s.logger.ErrorContext(ctx, "failed to set thread locked",
+				slog.Int64("threadID", threadID),
+				slog.Bool("locked", locked),
+				slog.String("error", err.Error()))
+			s.renderError(w, r, http.StatusInternalServerError)
+			return
+		}
+
+		s.logger.InfoContext(ctx, "thread locked status changed",
+			slog.Int64("actor_id", user.ID),
+			slog.Int64("thread_id", threadID),
+			slog.Bool("locked", locked))
+
+		// Back to the thread rather than the admin page, since locking is the
+		// only thread action and it is reached from the thread itself.
+		http.Redirect(w, r, fmt.Sprintf("/thread/%d", threadID), http.StatusSeeOther)
+		return
 	case "delete_thread":
 		// TODO: Implement DeleteThread query
 		s.logger.InfoContext(r.Context(), "DeleteThread not implemented", slog.Int64("threadID", threadID))
@@ -536,6 +565,24 @@ func (s *DiscussService) CreateThreadPost(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// The template hides the reply form on a locked thread, but that is only
+	// presentation: a stale page or a direct POST would still get through.
+	thread, err := s.queries.GetThreadForDisplay(ctx, threadID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			s.renderError(w, r, http.StatusNotFound)
+			return
+		}
+		s.logger.ErrorContext(ctx, "error getting thread", slog.String("error", err.Error()))
+		s.renderError(w, r, http.StatusInternalServerError)
+		return
+	}
+
+	if thread.Locked {
+		s.renderErrorMessage(w, r, http.StatusForbidden, "This thread is locked.")
+		return
+	}
+
 	bodyInput := SanitizeInput(r.Form.Get("thread_body"))
 
 	if errors := ValidateThreadPostForm(bodyInput); len(errors) > 0 {
@@ -610,7 +657,7 @@ func (s *DiscussService) EditMemberProfilePOST(w http.ResponseWriter, r *http.Re
 	s.logger.DebugContext(r.Context(), "entering EditMemberProfilePOST")
 	defer s.logger.DebugContext(r.Context(), "exiting EditMemberProfilePOST")
 
-	user, _, ok := s.ownProfile(w, r)
+	user, member, ok := s.ownProfile(w, r)
 	if !ok {
 		return
 	}
@@ -632,8 +679,12 @@ func (s *DiscussService) EditMemberProfilePOST(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	// Timezone is carried through unchanged. This form has no timezone field,
+	// and the update writes every column it names, so passing the zero
+	// pgtype.Text here would set the column to NULL on every profile save.
 	err := s.queries.UpdateMemberProfileByID(r.Context(), UpdateMemberProfileByIDParams{
 		MemberID: user.ID,
+		Timezone: member.Timezone,
 		PhotoUrl: pgtype.Text{
 			String: parseHTMLStrict(newPhotoURL),
 			Valid:  true,
@@ -773,7 +824,6 @@ func (s *DiscussService) EditThreadGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	threadIDStr := r.PathValue("tid")
 	threadID, err := strconv.ParseInt(threadIDStr, 10, 64)
 	if err != nil {
@@ -804,7 +854,7 @@ func (s *DiscussService) EditThreadGET(w http.ResponseWriter, r *http.Request) {
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-				"Thread":           t,
+		"Thread":           t,
 	})
 }
 
@@ -956,14 +1006,12 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 
 	r = r.WithContext(ctx)
 
-
 	user, err := GetUser(r)
 	if err != nil {
 		s.logger.DebugContext(r.Context(), "error getting user", "error", err)
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
 	}
-
 
 	span.AddEvent("queries.ListThreads")
 	threads, err := s.queries.ListThreads(r.Context(), ListThreadsParams{
@@ -1002,7 +1050,7 @@ func (s *DiscussService) ListThreads(w http.ResponseWriter, r *http.Request) {
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
 		"CurrentUserEmail": user.Email,
-				"User":             user,
+		"User":             user,
 	})
 }
 
@@ -1012,7 +1060,6 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 	defer span.End()
 
 	r = r.WithContext(ctx)
-
 
 	span.AddEvent("parseID")
 	threadIDStr := r.PathValue("tid")
@@ -1031,17 +1078,24 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-
-	span.AddEvent("queries.GetThreadSubject")
-	subject, err := s.queries.GetThreadSubjectById(r.Context(), threadID)
+	span.AddEvent("queries.GetThreadForDisplay")
+	thread, err := s.queries.GetThreadForDisplay(ctx, threadID)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "error getting thread subject", slog.String("error", err.Error()))
-		if err == pgx.ErrNoRows {
+		s.logger.ErrorContext(ctx, "error getting thread", slog.String("error", err.Error()))
+		if errors.Is(err, pgx.ErrNoRows) {
 			s.renderError(w, r, http.StatusNotFound)
 			return
 		}
 		s.renderError(w, r, http.StatusInternalServerError)
 		return
+	}
+
+	// A failed count is cosmetic; showing the thread matters more than the
+	// tally, so log and carry on.
+	if err := s.queries.IncrementThreadViews(ctx, threadID); err != nil {
+		s.logger.WarnContext(ctx, "failed to increment thread views",
+			slog.Int64("threadID", threadID),
+			slog.String("error", err.Error()))
 	}
 
 	posts, err := s.queries.ListThreadPosts(r.Context(), ListThreadPostsParams{
@@ -1071,11 +1125,12 @@ func (s *DiscussService) ListThreadPosts(w http.ResponseWriter, r *http.Request)
 		"Title":            GetBoardTitle(r),
 		"CurrentUserEmail": user.Email,
 		"ThreadPosts":      threadPosts,
-		"Subject":          subject,
+		"Subject":          thread.Subject,
+		"Locked":           thread.Locked,
 		"ID":               threadID,
-		"GitSha":    s.gitSha,
-		"Version":   s.version,
-				"User":      user,
+		"GitSha":           s.gitSha,
+		"Version":          s.version,
+		"User":             user,
 	})
 }
 
@@ -1116,7 +1171,6 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 
 	canEdit := user.ID == memberID || user.IsAdmin
 
-
 	s.renderTemplate(w, r, "member.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"Member":           member,
@@ -1125,7 +1179,7 @@ func (s *DiscussService) ListMember(w http.ResponseWriter, r *http.Request) {
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-				"User":             user,
+		"User":             user,
 		"TotalPosts":       len(threads),
 	})
 }
@@ -1139,13 +1193,12 @@ func (s *DiscussService) NewThread(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	s.renderTemplate(w, r, "newthread.html", map[string]interface{}{
 		"Title":            GetBoardTitle(r),
 		"CurrentUserEmail": user.Email,
 		"Version":          s.version,
 		"GitSha":           s.gitSha,
-				"User":             user,
+		"User":             user,
 	})
 }
 

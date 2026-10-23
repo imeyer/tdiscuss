@@ -868,13 +868,34 @@ pre code {
     border-radius: var(--r-sm);
 }
 
-.no-posts {
+.no-posts,
+.thread-locked {
     background-color: var(--surface-sunken);
     border-style: dashed;
     color: var(--text-3);
     font-size: 0.875rem;
     padding: var(--sp-5);
     text-align: center;
+}
+
+/* The lock/unlock control sits just under the subject, out of the flow of
+   the posts. */
+.thread-admin-actions {
+    margin-bottom: var(--sp-4);
+}
+
+.thread-admin-actions button {
+    font-size: 0.8125rem;
+    background-color: var(--surface-alt);
+    border-color: var(--border-strong);
+    color: var(--text-2);
+    box-shadow: none;
+}
+
+.thread-admin-actions button:hover {
+    background-color: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--accent-hover);
 }
 
 /* ==========================================================================

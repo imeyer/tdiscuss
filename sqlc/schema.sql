@@ -125,7 +125,6 @@ BEGIN
         id=OLD.thread_id;
     ELSEIF (SELECT posts FROM thread WHERE id=OLD.thread_id) = 1 THEN
       DELETE FROM thread_member WHERE thread_id=OLD.thread_id;
-      DELETE FROM favorite WHERE thread_id=OLD.thread_id;
       DELETE FROM thread WHERE id=OLD.thread_id;
     END IF;
     IF (SELECT count(*) FROM thread_post WHERE member_id=OLD.member_id AND thread_id=OLD.thread_id) = 0 THEN
@@ -204,32 +203,55 @@ CREATE OR REPLACE FUNCTION createOrReturnID(p_email VARCHAR(255))
 RETURNS TABLE (id BIGINT, is_admin BOOLEAN, is_blocked BOOLEAN) AS $$
 DECLARE
     v_id BIGINT;
-    v_is_admin BOOLEAN;
-    v_is_blocked BOOLEAN;
 BEGIN
+    -- Match on LOWER(email), the same thing member_email_lower_index enforces
+    -- unique. Comparing the raw column here would let "Someone@Example.com"
+    -- slip past an existing "someone@example.com" and fail on the insert.
+    SELECT member.id INTO v_id
+    FROM member
+    WHERE LOWER(member.email) = LOWER(p_email)
+    ORDER BY member.id
+    LIMIT 1;
+
     -- New members get no privileges. Admin is granted either by a capability
     -- grant in the tailnet policy file (see the README) or by setting
     -- member.is_admin directly; it is never inferred from signup order.
-    v_is_admin := false;
-    v_is_blocked := false;
-
-    -- Try to find the existing email
-    SELECT member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked
-    FROM member
-    WHERE member.email = p_email;
-
-    -- If the email doesn't exist, create a new record
+    --
+    -- Concurrent first requests from one login are ordinary: a first page
+    -- load fires several requests at once. ON CONFLICT makes the loser of
+    -- that race skip the insert instead of raising 23505, and RETURNING then
+    -- yields no row, which is what the second lookup is for. PostgreSQL
+    -- waits for the winning transaction before deciding, so the row it
+    -- reads is committed.
     IF v_id IS NULL THEN
         INSERT INTO member (email, is_admin, is_blocked)
         VALUES (p_email, false, false)
-        RETURNING member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false) INTO v_id, v_is_admin, v_is_blocked;
+        ON CONFLICT DO NOTHING
+        RETURNING member.id INTO v_id;
 
-        INSERT INTO member_profile (member_id)
-        VALUES (v_id);
+        IF v_id IS NULL THEN
+            SELECT member.id INTO v_id
+            FROM member
+            WHERE LOWER(member.email) = LOWER(p_email)
+            ORDER BY member.id
+            LIMIT 1;
+        END IF;
     END IF;
 
-    -- Return the ID (either existing or newly created)
-    RETURN QUERY SELECT v_id, v_is_admin, v_is_blocked;
+    IF v_id IS NULL THEN
+        RAISE EXCEPTION 'createOrReturnID: no member row for % after insert', p_email;
+    END IF;
+
+    -- The profile is created once; member_profile_member_id_index is unique
+    -- so a concurrent caller cannot add a second one.
+    INSERT INTO member_profile (member_id)
+    VALUES (v_id)
+    ON CONFLICT DO NOTHING;
+
+    RETURN QUERY
+    SELECT member.id, COALESCE(member.is_admin, false), COALESCE(member.is_blocked, false)
+    FROM member
+    WHERE member.id = v_id;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -246,7 +268,9 @@ CREATE TRIGGER member_sync AFTER INSERT OR DELETE ON member
 
 -- start member_profile
 ALTER TABLE member_profile ADD FOREIGN KEY (member_id) REFERENCES member(id);
-CREATE INDEX member_profile_member_id_index ON member_profile(member_id);
+-- Unique, not merely indexed: one profile per member is an invariant, and
+-- createOrReturnID relies on this constraint to make its insert idempotent.
+CREATE UNIQUE INDEX member_profile_member_id_index ON member_profile(member_id);
 -- end member_profile
 
 -- start thread

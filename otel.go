@@ -15,12 +15,14 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
 	"go.opentelemetry.io/otel/trace"
+	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
 type TelemetryConfig struct {
@@ -37,6 +39,26 @@ type TelemetryConfig struct {
 	}
 	TraceHTTPOptions []otlptracehttp.Option
 	Tracer           trace.Tracer
+}
+
+// noopTelemetry returns a TelemetryConfig whose tracer and metrics are no-ops,
+// plus a cleanup that does nothing.
+//
+// It is what the server falls back to when setupTelemetry fails. Telemetry is
+// optional - a board that cannot reach its collector should still serve - but
+// the rest of the program calls Tracer.Start and Record without checking for
+// nil, so "no telemetry" has to mean working no-op instruments rather than a
+// nil TelemetryConfig.
+func noopTelemetry() (*TelemetryConfig, func(context.Context) error) {
+	tc := &TelemetryConfig{
+		Tracer: tracenoop.NewTracerProvider().Tracer("tdiscuss"),
+	}
+	if err := initializeMetrics(metricnoop.NewMeterProvider().Meter("tdiscuss"), tc); err != nil {
+		// The noop meter cannot fail; keep going with nil instruments, which
+		// every caller guards against.
+		_ = err
+	}
+	return tc, func(context.Context) error { return nil }
 }
 
 var currentBufferSize int64
