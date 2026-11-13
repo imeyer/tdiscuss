@@ -7,7 +7,11 @@ cd "${REPO_ROOT}"
 
 BCR_URL="https://bcr.bazel.build/modules"
 
-GO="bazelisk run --config=silent @rules_go//go --"
+GO=go
+GH=(gh)
+if [[ -n "${GH_TOKEN:-}" ]]; then
+  GH=(env GH_TOKEN="${GH_TOKEN}" gh -R imeyer/tdiscuss)
+fi
 
 # --- Helper: get latest version of a Bazel module from BCR ---
 # Picks the highest non-yanked version by semantic order rather than trusting
@@ -25,11 +29,24 @@ print(sorted(vs, key=key)[-1] if vs else "")
 '
 }
 
-# --- Collect direct Go dependencies ---
+# Read go.mod directly: Bazel needs its Go SDK to match go.mod, so it cannot
+# resolve dependencies while the toolchain update is only partially applied.
+if ! module_json=$("${GO}" mod edit -json); then
+  echo "error: could not read go.mod" >&2
+  exit 1
+fi
 readarray -t direct_deps < <(
-  ${GO} list -m -f '{{if not .Indirect}}{{.Path}}{{end}}' all 2>/dev/null \
-    | grep -v "^$(${GO} list -m 2>/dev/null)$"
+  python3 -c '
+import json, sys
+for dep in json.loads(sys.argv[1]).get("Require", []):
+    if not dep.get("Indirect", False):
+        print(dep["Path"])
+' "${module_json}"
 )
+if [[ ${#direct_deps[@]} -eq 0 ]]; then
+  echo "error: no direct Go dependencies found in go.mod" >&2
+  exit 1
+fi
 
 # ============================================================
 # 1. Update Go toolchain version
@@ -45,13 +62,18 @@ fi
 CURRENT_GO=$(awk '/^go /{print $2}' go.mod)
 if [[ "${CURRENT_GO}" != "${LATEST_GO}" ]]; then
   echo "    go.mod: ${CURRENT_GO} -> ${LATEST_GO}"
-  ${GO} mod edit -go="${LATEST_GO}" 2>/dev/null
-
-  # Update MODULE.bazel go_sdk.download version
-  sed -i "s/go_sdk.download(version = \"${CURRENT_GO}\")/go_sdk.download(version = \"${LATEST_GO}\")/" MODULE.bazel
-  echo "    MODULE.bazel: updated go_sdk.download version"
+  "${GO}" mod edit -go="${LATEST_GO}"
 else
   echo "    already at latest: ${CURRENT_GO}"
+fi
+
+if ! grep -q 'go_sdk.download(version = ' MODULE.bazel; then
+  echo "error: go_sdk.download not found in MODULE.bazel" >&2
+  exit 1
+fi
+if ! sed -i -E "s/go_sdk\\.download\\(version = \"[^\"]+\"\\)/go_sdk.download(version = \"${LATEST_GO}\")/" MODULE.bazel; then
+  echo "error: could not update Go SDK version in MODULE.bazel" >&2
+  exit 1
 fi
 
 # Update GitHub workflow go-version references (always, in case they drifted)
@@ -95,13 +117,60 @@ for dep in "${direct_deps[@]}"; do
   echo "    ${dep}"
   get_args+=("${dep}@latest")
 done
-${GO} get "${get_args[@]}" 2>/dev/null
+"${GO}" get "${get_args[@]}"
 
 echo "==> Tidying go.mod..."
-${GO} mod tidy 2>/dev/null
+"${GO}" mod tidy
 
 # ============================================================
-# 4. Refresh pinned OCI base image digests to their tags
+# 4. Update GitHub Actions release tags and their commit pins
+# ============================================================
+echo "==> Updating GitHub Actions..."
+
+github_action_latest() {
+  local action="$1" tag reference sha ref_type
+  if ! tag=$("${GH[@]}" api "repos/${action}/releases/latest" --jq '.tag_name'); then
+    echo "    ${action}: could not fetch latest release, skipping" >&2
+    return 1
+  fi
+  reference=$("${GH[@]}" api "repos/${action}/git/ref/tags/${tag}")
+  sha=$(jq -r '.object.sha' <<<"${reference}")
+  ref_type=$(jq -r '.object.type' <<<"${reference}")
+  if [[ "${ref_type}" == "tag" ]]; then
+    sha=$("${GH[@]}" api "repos/${action}/git/tags/${sha}" --jq '.object.sha')
+  elif [[ "${ref_type}" != "commit" ]]; then
+    echo "    ${action}: unexpected tag target ${ref_type}, skipping" >&2
+    return 1
+  fi
+  if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "    ${action}: release tag did not resolve to a commit, skipping" >&2
+    return 1
+  fi
+  printf '%s %s\n' "${sha}" "${tag}"
+}
+
+readarray -t actions < <(
+  find .github/workflows \( -name '*.yml' -o -name '*.yaml' \) \
+    -exec grep -hE '^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}([[:space:]]|$)' {} + \
+    | sed -E 's|^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@.*|\2|' \
+    | sort -u
+)
+for action in "${actions[@]}"; do
+  if ! latest=$(github_action_latest "${action}"); then
+    continue
+  fi
+  read -r sha tag <<<"${latest}"
+  if grep -R -qE "uses:[[:space:]]*${action}@${sha}([[:space:]]|$)" .github/workflows; then
+    echo "    ${action}: up to date (${tag})"
+    continue
+  fi
+  find .github/workflows \( -name '*.yml' -o -name '*.yaml' \) \
+    -exec sed -i -E "s|(uses:[[:space:]]*${action}@)[0-9a-f]{40}([[:space:]]*#.*)?$|\1${sha} # ${tag}|" {} +
+  echo "    ${action}: updated to ${tag} (${sha})"
+done
+
+# ============================================================
+# 5. Refresh pinned OCI base image digests to their tags
 # ============================================================
 # oci.pull() pins base images by digest; tags like distroless :nonroot are
 # rebuilt (e.g. for CVE fixes), so the pins drift and must be refreshed too.
@@ -155,9 +224,9 @@ PY
 )
 
 # ============================================================
-# 5. Sync Bazel with updated go.mod / MODULE.bazel
+# 6. Sync Bazel with updated go.mod / MODULE.bazel
 # ============================================================
 echo "==> Running bazel mod tidy..."
-bazelisk mod tidy --config=silent 2>/dev/null
+bazelisk mod tidy --config=silent
 
 echo "==> Done."
